@@ -3,6 +3,9 @@ import { lstat, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  exportTranslationJsonRequestSchema,
+  exportTranslationJsonResponseSchema,
+  importTranslationJsonResponseSchema,
   loadModsRequestSchema,
   saveTranslationModRequestSchema,
   saveTranslationModResponseSchema,
@@ -10,9 +13,13 @@ import {
 } from '../src/shared/ipc.ts';
 import {
   createTranslationModBuffer,
-  parseModBuffer,
+  parseMod,
 } from '../src/shared/mod-format.ts';
-import type { TranslationRecord } from '../src/shared/models.ts';
+import type {
+  InspectorRecord,
+  LoadedMod,
+  TranslationRecord,
+} from '../src/shared/models.ts';
 
 const electronRoot = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.resolve(electronRoot, '..');
@@ -22,11 +29,11 @@ const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL);
 
 const createWindow = async () => {
   const mainWindow = new BrowserWindow({
-    width: 1480,
-    height: 980,
+    width: 1520,
+    height: 1000,
     minWidth: 1200,
     minHeight: 760,
-    backgroundColor: '#17120f',
+    backgroundColor: '#0f0b09',
     show: false,
     title: 'Kenshiツール',
     webPreferences: {
@@ -117,6 +124,8 @@ const parseProject = async (input: LoadModsRequest) => {
 
   const dependencies: string[] = [];
   const records: TranslationRecord[] = [];
+  const inspectorRecords: InspectorRecord[] = [];
+  const mods: LoadedMod[] = [];
 
   for (const modPath of modPaths) {
     const fileBuffer = await readFile(modPath);
@@ -124,23 +133,28 @@ const parseProject = async (input: LoadModsRequest) => {
       fileBuffer.byteOffset,
       fileBuffer.byteOffset + fileBuffer.byteLength,
     );
-    const parsedRecords = parseModBuffer(arrayBuffer);
+    const modName = path.basename(modPath, '.mod');
+    const parsed = parseMod(arrayBuffer, modName);
 
-    dependencies.push(path.basename(modPath, '.mod'));
-    records.push(...parsedRecords);
+    dependencies.push(modName);
+    records.push(...parsed.translationRecords);
+    inspectorRecords.push(...parsed.inspectorRecords);
+    mods.push({
+      fileName: path.basename(modPath),
+      filePath: modPath,
+      header: parsed.header,
+      recordCount: parsed.inspectorRecords.length,
+    });
   }
 
-  if (records.length === 0) {
-    throw new Error(
-      '翻訳対象として扱えるテキストが見つかりませんでした。',
-    );
-  }
+  const uniqueDependencies = uniquePreserveOrder(dependencies);
 
   return {
-    dependencies: uniquePreserveOrder(dependencies),
+    dependencies: uniqueDependencies,
+    inspectorRecords,
+    mods,
     records,
-    sourceModName:
-      uniquePreserveOrder(dependencies)[0] ?? 'unknown',
+    sourceModName: uniqueDependencies[0] ?? 'unknown',
   };
 };
 
@@ -204,6 +218,71 @@ const registerIpc = () => {
     return saveTranslationModResponseSchema.parse({
       canceled: false,
       filePath: dialogResult.filePath,
+    });
+  });
+
+  ipcMain.handle(
+    'translation:export-json',
+    async (_event, rawInput) => {
+      const input = exportTranslationJsonRequestSchema.parse(rawInput);
+      const defaultPath = path.join(
+        app.getPath('downloads'),
+        input.fileName,
+      );
+      const dialogResult = await dialog.showSaveDialog({
+        defaultPath,
+        filters: [
+          {
+            extensions: ['json'],
+            name: '翻訳プロジェクト',
+          },
+        ],
+        title: '翻訳プロジェクトをエクスポート',
+      });
+
+      if (dialogResult.canceled || !dialogResult.filePath) {
+        return exportTranslationJsonResponseSchema.parse({
+          canceled: true,
+          filePath: null,
+        });
+      }
+
+      await writeFile(dialogResult.filePath, input.payload, 'utf-8');
+
+      return exportTranslationJsonResponseSchema.parse({
+        canceled: false,
+        filePath: dialogResult.filePath,
+      });
+    },
+  );
+
+  ipcMain.handle('translation:import-json', async () => {
+    const dialogResult = await dialog.showOpenDialog({
+      filters: [
+        {
+          extensions: ['json'],
+          name: '翻訳プロジェクト',
+        },
+      ],
+      properties: ['openFile'],
+      title: '翻訳プロジェクトをインポート',
+    });
+
+    if (
+      dialogResult.canceled ||
+      dialogResult.filePaths.length === 0
+    ) {
+      return importTranslationJsonResponseSchema.parse({
+        canceled: true,
+        payload: null,
+      });
+    }
+
+    const payload = await readFile(dialogResult.filePaths[0], 'utf-8');
+
+    return importTranslationJsonResponseSchema.parse({
+      canceled: false,
+      payload,
     });
   });
 

@@ -14,6 +14,30 @@ export const saveTranslationModResponseSchema = z.object({
   filePath: z.string().nullable(),
 });
 
+export const importTranslationJsonResponseSchema = z.object({
+  canceled: z.boolean(),
+  payload: z.string().nullable(),
+});
+
+export const exportTranslationJsonRequestSchema = z.object({
+  fileName: z.string(),
+  payload: z.string(),
+});
+
+export const exportTranslationJsonResponseSchema = z.object({
+  canceled: z.boolean(),
+  filePath: z.string().nullable(),
+});
+
+export type ExportTranslationJsonRequest = z.infer<
+  typeof exportTranslationJsonRequestSchema
+>;
+export type ExportTranslationJsonResponse = z.infer<
+  typeof exportTranslationJsonResponseSchema
+>;
+export type ImportTranslationJsonResponse = z.infer<
+  typeof importTranslationJsonResponseSchema
+>;
 export type LoadModsRequest = z.infer<typeof loadModsRequestSchema>;
 export type SaveTranslationModRequest = z.infer<
   typeof saveTranslationModRequestSchema
@@ -23,13 +47,17 @@ export type SaveTranslationModResponse = z.infer<
 >;
 
 export interface ElectronApi {
-  pickModFiles: () => Promise<string[]>;
-  pickModFolders: () => Promise<string[]>;
+  exportTranslationJson: (
+    input: ExportTranslationJsonRequest,
+  ) => Promise<ExportTranslationJsonResponse>;
+  importTranslationJson: () => Promise<ImportTranslationJsonResponse>;
   loadMods: (
     input: LoadModsRequest,
   ) => Promise<z.infer<typeof translationProjectSchema>>;
+  pickModFiles: () => Promise<string[]>;
+  pickModFolders: () => Promise<string[]>;
+  revealFileInFolder: (filePath: string) => Promise<void>;
   saveTranslationMod: (
     input: SaveTranslationModRequest,
   ) => Promise<SaveTranslationModResponse>;
-  revealFileInFolder: (filePath: string) => Promise<void>;
 }
