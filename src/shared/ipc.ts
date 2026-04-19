@@ -50,6 +50,7 @@ export interface ElectronApi {
   exportTranslationJson: (
     input: ExportTranslationJsonRequest,
   ) => Promise<ExportTranslationJsonResponse>;
+  getPathForFile: (file: File) => string;
   importTranslationJson: () => Promise<ImportTranslationJsonResponse>;
   loadMods: (
     input: LoadModsRequest,

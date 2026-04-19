@@ -1,9 +1,10 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { ElectronApi } from '../src/shared/ipc.ts';
 
 const electronApi = {
   exportTranslationJson: async (input) =>
     ipcRenderer.invoke('translation:export-json', input),
+  getPathForFile: (file) => webUtils.getPathForFile(file),
   importTranslationJson: async () =>
     ipcRenderer.invoke('translation:import-json'),
   loadMods: async (input) => ipcRenderer.invoke('mods:load', input),

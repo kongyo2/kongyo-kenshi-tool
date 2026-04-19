@@ -16,11 +16,12 @@ export const getErrorMessage = (error: unknown) => {
 
 export const extractDroppedPaths = (fileList: FileList) => {
   const droppedPaths: string[] = [];
+  const resolveFilePath = window.electronApi?.getPathForFile;
 
   for (const currentFile of Array.from(fileList)) {
-    const maybePath = (currentFile as File & { path?: string }).path;
-    if (typeof maybePath === 'string' && maybePath.length > 0) {
-      droppedPaths.push(maybePath);
+    const resolvedPath = resolveFilePath?.(currentFile);
+    if (typeof resolvedPath === 'string' && resolvedPath.length > 0) {
+      droppedPaths.push(resolvedPath);
     }
   }
 
