@@ -58,14 +58,103 @@ const collectDeclaredReferences = (mods: readonly LoadedMod[]) =>
 
 const normalizeModName = (value: string) => value.replace(/\.mod$/i, '');
 
-const buildRecordAnchor = (uid: string, sequence: number) => {
-  const asciiSlug = uid
-    .toLowerCase()
-    .replace(/[^a-z0-9\-_:]/g, '-')
-    .replace(/-{2,}/g, '-')
-    .replace(/^-|-$/g, '');
+const getVisibleStringEntries = (record: Pick<InspectorRecord, 'strings'>) =>
+  record.strings.filter((entry) => entry.value.length > 0);
 
-  return `rec-${sequence}${asciiSlug.length > 0 ? `-${asciiSlug}` : ''}`;
+const getVisibleDialogTexts = (record: DialogRecord) =>
+  record.texts.filter((text) => text.original.length > 0);
+
+type StringRenderStats = {
+  emptyOnlyRecordCount: number;
+  omittedNoStringRecordCount: number;
+  renderedFieldCount: number;
+  renderedRecordCount: number;
+  totalFieldCount: number;
+  totalRecordCount: number;
+};
+
+type DialogRenderStats = {
+  omittedEmptyRecordCount: number;
+  omittedEmptyTextCount: number;
+  renderedRecordCount: number;
+  renderedTextCount: number;
+  totalRecordCount: number;
+  totalTextCount: number;
+};
+
+const summarizeStringRecords = (
+  records: readonly InspectorRecord[],
+): StringRenderStats => {
+  let emptyOnlyRecordCount = 0;
+  let omittedNoStringRecordCount = 0;
+  let renderedFieldCount = 0;
+  let renderedRecordCount = 0;
+  let totalFieldCount = 0;
+  let totalRecordCount = 0;
+
+  for (const record of records) {
+    if (record.strings.length === 0) {
+      omittedNoStringRecordCount += 1;
+      continue;
+    }
+
+    totalRecordCount += 1;
+    totalFieldCount += record.strings.length;
+
+    const visibleStringCount = getVisibleStringEntries(record).length;
+    if (visibleStringCount === 0) {
+      emptyOnlyRecordCount += 1;
+      continue;
+    }
+
+    renderedRecordCount += 1;
+    renderedFieldCount += visibleStringCount;
+  }
+
+  return {
+    emptyOnlyRecordCount,
+    omittedNoStringRecordCount,
+    renderedFieldCount,
+    renderedRecordCount,
+    totalFieldCount,
+    totalRecordCount,
+  };
+};
+
+const summarizeDialogRecords = (
+  records: readonly DialogRecord[],
+): DialogRenderStats => {
+  let omittedEmptyRecordCount = 0;
+  let omittedEmptyTextCount = 0;
+  let renderedRecordCount = 0;
+  let renderedTextCount = 0;
+  let totalRecordCount = 0;
+  let totalTextCount = 0;
+
+  for (const record of records) {
+    totalRecordCount += 1;
+    totalTextCount += record.texts.length;
+
+    const visibleTextCount = getVisibleDialogTexts(record).length;
+    omittedEmptyTextCount += record.texts.length - visibleTextCount;
+
+    if (visibleTextCount === 0) {
+      omittedEmptyRecordCount += 1;
+      continue;
+    }
+
+    renderedRecordCount += 1;
+    renderedTextCount += visibleTextCount;
+  }
+
+  return {
+    omittedEmptyRecordCount,
+    omittedEmptyTextCount,
+    renderedRecordCount,
+    renderedTextCount,
+    totalRecordCount,
+    totalTextCount,
+  };
 };
 
 const countCategories = (records: readonly InspectorRecord[]) => {
@@ -87,19 +176,14 @@ const countTypes = (records: readonly InspectorRecord[]) => {
 
 const renderHeader = (project: ModProject) => {
   const totalRecords = project.inspectorRecords.length;
-  const stringBearingRecordCount = project.inspectorRecords.filter(
-    (record) => record.strings.length > 0,
-  ).length;
-  const totalStrings = project.inspectorRecords.reduce(
-    (sum, record) => sum + record.strings.length,
-    0,
+  const stringStats = summarizeStringRecords(project.inspectorRecords);
+  const dialogRecords = project.textRecords.filter(
+    (record): record is DialogRecord => record.kind === 'dialog',
   );
-  const totalTextRecords = project.textRecords.length;
-  const dialogLineCount = project.textRecords.reduce(
-    (sum, record) =>
-      record.kind === 'dialog' ? sum + record.texts.length : sum,
-    0,
-  );
+  const dialogStats = summarizeDialogRecords(dialogRecords);
+  const entityRecordCount = project.textRecords.length - dialogRecords.length;
+  const visibleTextRecordCount =
+    dialogStats.renderedRecordCount + entityRecordCount;
 
   const lines: string[] = [];
   lines.push('# Kenshi Mod Markdown Export');
@@ -118,7 +202,7 @@ const renderHeader = (project: ModProject) => {
     'Provide a complete and prompt-friendly snapshot of the selected mods,',
   );
   lines.push(
-    'including metadata, record inventory, every string field, and extracted',
+    'including metadata, record inventory, non-empty string fields, and extracted',
   );
   lines.push('dialog or description-heavy records.');
   lines.push('');
@@ -128,7 +212,7 @@ const renderHeader = (project: ModProject) => {
   );
   lines.push('  text that is likely to matter to an LLM task.');
   lines.push(
-    '- Use `String-bearing Records` when you need the full raw string payload and exact keys',
+    '- Use `String-bearing Records` when you need the raw non-empty string payload and exact keys',
   );
   lines.push('  from the source mod data.');
   lines.push(
@@ -139,17 +223,32 @@ const renderHeader = (project: ModProject) => {
     '- Non-string fields are summarized as counts so the dump stays compact enough',
   );
   lines.push('  for prompt construction.');
+  lines.push(
+    '- Empty string values are omitted from dialog and raw sections to reduce prompt noise.',
+  );
   lines.push('');
   lines.push('### Metrics');
   lines.push(`- Source project: **${project.sourceModName}**`);
   lines.push(`- Loaded mods: **${formatNumber(project.mods.length)}**`);
   lines.push(`- Total records: **${formatNumber(totalRecords)}**`);
   lines.push(
-    `- String-bearing records: **${formatNumber(stringBearingRecordCount)}**`,
+    `- Rendered string-bearing records: **${formatNumber(stringStats.renderedRecordCount)}**`,
   );
-  lines.push(`- Total string fields: **${formatNumber(totalStrings)}**`);
-  lines.push(`- Extracted text records: **${formatNumber(totalTextRecords)}**`);
-  lines.push(`- Extracted dialog lines: **${formatNumber(dialogLineCount)}**`);
+  lines.push(
+    `- Rendered string fields: **${formatNumber(stringStats.renderedFieldCount)}**`,
+  );
+  lines.push(
+    `- Omitted empty string fields: **${formatNumber(stringStats.totalFieldCount - stringStats.renderedFieldCount)}**`,
+  );
+  lines.push(
+    `- Extracted text records: **${formatNumber(visibleTextRecordCount)}**`,
+  );
+  lines.push(
+    `- Extracted dialog lines: **${formatNumber(dialogStats.renderedTextCount)}**`,
+  );
+  lines.push(
+    `- Omitted empty dialog variants: **${formatNumber(dialogStats.omittedEmptyTextCount)}**`,
+  );
   lines.push(
     `- Declared dependencies: **${formatNumber(collectDeclaredDependencies(project.mods).length)}**`,
   );
@@ -280,7 +379,6 @@ const renderMods = (mods: readonly LoadedMod[]) => {
     lines.push('');
     lines.push('| Field | Value |');
     lines.push('| --- | --- |');
-    lines.push(`| File | \`${escapeTableCell(mod.filePath)}\` |`);
     lines.push(`| File type | ${mod.header.fileType} |`);
     lines.push(`| Version | ${mod.header.version} |`);
     lines.push(
@@ -318,10 +416,9 @@ const renderMods = (mods: readonly LoadedMod[]) => {
   return lines.join('\n');
 };
 
-const renderRecordCounts = (counts: InspectorRecord['counts']) => {
+const renderOtherFieldCounts = (counts: InspectorRecord['counts']) => {
   const parts: string[] = [];
   const entries: Array<[string, number]> = [
-    ['strings', counts.strings],
     ['bools', counts.bools],
     ['floats', counts.floats],
     ['ints', counts.ints],
@@ -340,24 +437,41 @@ const renderRecordCounts = (counts: InspectorRecord['counts']) => {
   }
 
   if (parts.length === 0) {
-    return '(no sub-fields)';
+    return '';
   }
 
   return parts.join(', ');
 };
 
+const renderTypeDescriptor = (type: number) =>
+  `${type} · ${getItemTypeEnglishName(type)} · ${getItemTypeLabel(type)}`;
+
 const renderStringBearingRecords = (records: readonly InspectorRecord[]) => {
+  const stringStats = summarizeStringRecords(records);
   const stringRecords = records.filter((record) => record.strings.length > 0);
-  const omittedCount = records.length - stringRecords.length;
   const lines: string[] = [];
   lines.push('## String-bearing Records');
   lines.push('');
   lines.push(
-    `Total: ${formatNumber(stringRecords.length)} records with string fields`,
+    'This section preserves original string keys while omitting empty values and records that contain only empty strings.',
+  );
+  lines.push('');
+  lines.push(
+    `Rendered: ${formatNumber(stringStats.renderedRecordCount)} records / ${formatNumber(stringStats.renderedFieldCount)} non-empty string fields`,
   );
   lines.push(
-    `Omitted: ${formatNumber(omittedCount)} records with no string fields`,
+    `Omitted: ${formatNumber(stringStats.omittedNoStringRecordCount)} records with no string fields`,
   );
+  if (stringStats.emptyOnlyRecordCount > 0) {
+    lines.push(
+      `Omitted: ${formatNumber(stringStats.emptyOnlyRecordCount)} records whose string fields are all empty`,
+    );
+  }
+  if (stringStats.totalFieldCount > stringStats.renderedFieldCount) {
+    lines.push(
+      `Empty string fields omitted: ${formatNumber(stringStats.totalFieldCount - stringStats.renderedFieldCount)}`,
+    );
+  }
   lines.push('');
 
   const byMod = new Map<string, InspectorRecord[]>();
@@ -371,47 +485,55 @@ const renderStringBearingRecords = (records: readonly InspectorRecord[]) => {
     }
   }
 
-  let globalSequence = 0;
-
   for (const [modName, modRecords] of byMod) {
+    const modStats = summarizeStringRecords(modRecords);
+    if (modStats.renderedRecordCount === 0) {
+      continue;
+    }
+
     lines.push(`### String-bearing Records · ${modName}`);
     lines.push('');
     lines.push(
-      `${pluralSuffix('record', modRecords.length)} from \`${modName}\`.`,
+      `${pluralSuffix('record', modStats.renderedRecordCount)} / ${pluralSuffix('field', modStats.renderedFieldCount)} shown from \`${modName}\`.`,
     );
+    if (modStats.emptyOnlyRecordCount > 0) {
+      lines.push(
+        `${pluralSuffix('record', modStats.emptyOnlyRecordCount)} with only empty strings omitted.`,
+      );
+    }
     lines.push('');
 
     for (const record of modRecords) {
-      const category = getItemCategory(record.type);
-      const typeLabel = getItemTypeLabel(record.type);
-      const typeEnglish = getItemTypeEnglishName(record.type);
-      const displayName =
-        record.name.length === 0 ? '(unnamed)' : record.name;
-      const anchor = buildRecordAnchor(record.uid, globalSequence);
-      globalSequence += 1;
+      const visibleStrings = getVisibleStringEntries(record);
+      if (visibleStrings.length === 0) {
+        continue;
+      }
 
-      lines.push(
-        `#### <a id="${anchor}"></a>${escapeTableCell(displayName)}`,
-      );
-      lines.push('');
-      lines.push('| Field | Value |');
-      lines.push('| --- | --- |');
-      lines.push(`| UID | \`${escapeTableCell(record.uid)}\` |`);
-      lines.push(`| stringId | \`${escapeTableCell(record.stringId)}\` |`);
-      lines.push(`| Mod | ${escapeTableCell(modName)} |`);
-      lines.push(
-        `| Type | ${record.type} · ${typeEnglish} · ${typeLabel} |`,
-      );
-      lines.push(
-        `| Category | ${itemCategoryLabels[category]} (${category}) |`,
-      );
-      lines.push(`| Field counts | ${renderRecordCounts(record.counts)} |`);
-      lines.push('');
+      const heading = renderInspectorHeading(record);
+      const metaParts: string[] = [];
+      const otherFieldCounts = renderOtherFieldCounts(record.counts);
+      const omittedEmptyCount = record.strings.length - visibleStrings.length;
 
-      lines.push('**String fields**');
+      if (heading !== record.stringId) {
+        metaParts.push(`ID: \`${escapeTableCell(record.stringId)}\``);
+      }
+
+      metaParts.push(`Type: ${renderTypeDescriptor(record.type)}`);
+
+      if (otherFieldCounts.length > 0) {
+        metaParts.push(`Other fields: ${otherFieldCounts}`);
+      }
+
+      if (omittedEmptyCount > 0) {
+        metaParts.push(`${formatNumber(omittedEmptyCount)} empty omitted`);
+      }
+
+      lines.push(`#### ${escapeTableCell(heading)}`);
       lines.push('');
-      for (const entry of record.strings) {
-        lines.push(`- **${escapeTableCell(entry.key)}**`);
+      lines.push(`- ${metaParts.join(' · ')}`);
+      lines.push('');
+      for (const entry of visibleStrings) {
+        lines.push(`- \`${escapeTableCell(entry.key)}\``);
         lines.push('');
         lines.push(formatMultiline(entry.value));
         lines.push('');
@@ -443,20 +565,42 @@ const groupTextRecordsByMod = <T extends DialogRecord | EntityRecord>(
 const isGenericDialogTitle = (value: string) =>
   /^DIALOGUE_LINE(?:\d+)?$/i.test(value) || value === 'DIALOGUE_LINE';
 
-const renderDialogHeading = (record: DialogRecord) => {
+type HeadingRecord = Pick<InspectorRecord, 'name' | 'stringId' | 'type'>;
+
+const renderBaseRecordHeading = (record: HeadingRecord) => {
   const trimmedName = record.name.trim();
 
-  if (trimmedName.length === 0 || isGenericDialogTitle(trimmedName)) {
+  if (
+    record.type === 19 &&
+    (trimmedName.length === 0 || isGenericDialogTitle(trimmedName))
+  ) {
     return record.stringId;
   }
 
-  return `${trimmedName} · ${record.stringId}`;
+  if (trimmedName.length > 0) {
+    return trimmedName;
+  }
+
+  if (record.stringId.length > 0) {
+    return record.stringId;
+  }
+
+  return '(unnamed)';
 };
 
-const renderEntityHeading = (record: EntityRecord) => {
-  const trimmedName = record.name.trim();
-  return trimmedName.length > 0 ? trimmedName : record.stringId;
+const renderDialogHeading = (record: DialogRecord) => {
+  const heading = renderBaseRecordHeading(record);
+  if (heading === record.stringId) {
+    return record.stringId;
+  }
+
+  return `${heading} · ${record.stringId}`;
 };
+
+const renderEntityHeading = (record: EntityRecord) => renderBaseRecordHeading(record);
+
+const renderInspectorHeading = (record: InspectorRecord) =>
+  renderBaseRecordHeading(record);
 
 const renderExtractedTextRecords = (project: ModProject) => {
   const dialogRecords: DialogRecord[] = [];
@@ -486,29 +630,33 @@ const renderExtractedTextRecords = (project: ModProject) => {
   const dialogByMod = groupTextRecordsByMod(dialogRecords);
   const describedEntitiesByMod = groupTextRecordsByMod(describedEntityRecords);
   const nameOnlyEntitiesByMod = groupTextRecordsByMod(nameOnlyEntityRecords);
+  const dialogStats = summarizeDialogRecords(dialogRecords);
   const lines: string[] = [];
   lines.push('## Extracted Text Records');
   lines.push('');
   lines.push(
-    `Dialog records: ${formatNumber(dialogRecords.length)} · Described entities: ${formatNumber(describedEntityRecords.length)} · Name-only entities: ${formatNumber(nameOnlyEntityRecords.length)}`,
+    `Dialog records: ${formatNumber(dialogStats.renderedRecordCount)} shown · Dialog lines: ${formatNumber(dialogStats.renderedTextCount)} shown · Described entities: ${formatNumber(describedEntityRecords.length)} · Name-only entities: ${formatNumber(nameOnlyEntityRecords.length)}`,
   );
+  if (dialogStats.omittedEmptyRecordCount > 0 || dialogStats.omittedEmptyTextCount > 0) {
+    lines.push('');
+    lines.push(
+      `Empty-only dialog records omitted: ${formatNumber(dialogStats.omittedEmptyRecordCount)} · Empty dialog variants omitted: ${formatNumber(dialogStats.omittedEmptyTextCount)}`,
+    );
+  }
   lines.push('');
 
   lines.push('### Mod Breakdown');
   lines.push('');
-  lines.push('| Mod | Dialog records | Dialog lines | Described entities | Name-only entities |');
-  lines.push('| --- | ---: | ---: | ---: | ---: |');
+  lines.push('| Mod | Dialog records | Dialog lines | Empty-only dialogs omitted | Described entities | Name-only entities |');
+  lines.push('| --- | ---: | ---: | ---: | ---: | ---: |');
   for (const mod of project.mods) {
     const modName = normalizeModName(mod.fileName);
     const modDialogRecords = dialogByMod.get(modName) ?? [];
     const modDescribedEntities = describedEntitiesByMod.get(modName) ?? [];
     const modNameOnlyEntities = nameOnlyEntitiesByMod.get(modName) ?? [];
-    const dialogLineCount = modDialogRecords.reduce(
-      (sum, record) => sum + record.texts.length,
-      0,
-    );
+    const modDialogStats = summarizeDialogRecords(modDialogRecords);
     lines.push(
-      `| ${escapeTableCell(modName)} | ${formatNumber(modDialogRecords.length)} | ${formatNumber(dialogLineCount)} | ${formatNumber(modDescribedEntities.length)} | ${formatNumber(modNameOnlyEntities.length)} |`,
+      `| ${escapeTableCell(modName)} | ${formatNumber(modDialogStats.renderedRecordCount)} | ${formatNumber(modDialogStats.renderedTextCount)} | ${formatNumber(modDialogStats.omittedEmptyRecordCount)} | ${formatNumber(modDescribedEntities.length)} | ${formatNumber(modNameOnlyEntities.length)} |`,
     );
   }
   lines.push('');
@@ -529,9 +677,7 @@ const renderExtractedTextRecords = (project: ModProject) => {
           metaParts.push(`ID: \`${escapeTableCell(record.stringId)}\``);
         }
 
-        metaParts.push(
-          `Type: ${record.type} · ${getItemTypeEnglishName(record.type)}`,
-        );
+        metaParts.push(`Type: ${renderTypeDescriptor(record.type)}`);
 
         lines.push(`##### ${escapeTableCell(heading)}`);
         lines.push('');
@@ -568,23 +714,48 @@ const renderExtractedTextRecords = (project: ModProject) => {
     lines.push('### Dialog Text');
     lines.push('');
     for (const [modName, records] of dialogByMod) {
-      const lineCount = records.reduce((sum, record) => sum + record.texts.length, 0);
+      const modDialogStats = summarizeDialogRecords(records);
+      if (modDialogStats.renderedRecordCount === 0) {
+        continue;
+      }
+
       lines.push(`#### ${escapeTableCell(modName)}`);
       lines.push('');
       lines.push(
-        `${pluralSuffix('record', records.length)} / ${pluralSuffix('line', lineCount)}.`,
+        `${pluralSuffix('record', modDialogStats.renderedRecordCount)} / ${pluralSuffix('line', modDialogStats.renderedTextCount)} shown.`,
       );
+      if (modDialogStats.omittedEmptyRecordCount > 0) {
+        lines.push(
+          `${pluralSuffix('record', modDialogStats.omittedEmptyRecordCount)} with only empty dialog variants omitted.`,
+        );
+      }
       lines.push('');
       for (const record of records) {
+        const visibleTexts = getVisibleDialogTexts(record);
+        if (visibleTexts.length === 0) {
+          continue;
+        }
+
         const heading = renderDialogHeading(record);
-        const singleText = record.texts[0];
+        const singleText = visibleTexts[0];
+        const omittedTextCount = record.texts.length - visibleTexts.length;
 
         lines.push(`##### ${escapeTableCell(heading)}`);
         lines.push('');
 
-        if (record.texts.length === 1 && singleText) {
+        if (visibleTexts.length === 1 && singleText) {
+          const metaParts: string[] = [];
+
           if (singleText.textId !== 'text0') {
-            lines.push(`- Field: \`${escapeTableCell(singleText.textId)}\``);
+            metaParts.push(`Field: \`${escapeTableCell(singleText.textId)}\``);
+          }
+
+          if (omittedTextCount > 0) {
+            metaParts.push(`${formatNumber(omittedTextCount)} empty omitted`);
+          }
+
+          if (metaParts.length > 0) {
+            lines.push(`- ${metaParts.join(' · ')}`);
             lines.push('');
           }
 
@@ -593,12 +764,20 @@ const renderExtractedTextRecords = (project: ModProject) => {
           continue;
         }
 
-        if (record.texts.length > 1) {
-          lines.push(`- Variations: ${formatNumber(record.texts.length)}`);
+        if (visibleTexts.length > 1) {
+          const variationParts = [
+            `Variations: ${formatNumber(visibleTexts.length)} shown`,
+          ];
+
+          if (omittedTextCount > 0) {
+            variationParts.push(`${formatNumber(omittedTextCount)} empty omitted`);
+          }
+
+          lines.push(`- ${variationParts.join(' · ')}`);
           lines.push('');
         }
 
-        for (const text of record.texts) {
+        for (const text of visibleTexts) {
           lines.push(`- \`${escapeTableCell(text.textId)}\``);
           lines.push('');
           lines.push(formatMultiline(text.original));

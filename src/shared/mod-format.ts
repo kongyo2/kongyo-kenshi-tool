@@ -298,7 +298,7 @@ export const parseMod = (
     };
 
     const typeDefinition = getItemTypeDefinition(type);
-    const isTypeTextRelevant = typeDefinition?.translatable ?? false;
+    const isTypeTextRelevant = typeDefinition?.textRelevant ?? false;
     const isDialogType = type === dialogTypeCode;
     const canExtractNameOrDescription =
       isTypeTextRelevant && !isDialogType && (dataType & 0b11) !== 1;
