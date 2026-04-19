@@ -1,7 +1,7 @@
 {
   "name": "kongyo-kenshi-tool",
   "version": "1.0.0",
-  "description": "Kenshiのmodを手動翻訳して翻訳用.modを出力するWindows専用デスクトップアプリ",
+  "description": "Kenshi向けのWindows用デスクトップツール",
   "private": true,
   "main": "dist-electron/main.js",
   "scripts": {
@@ -47,7 +47,7 @@
   },
   "build": {
     "appId": "jp.prett.kongyo.kenshi.tool",
-    "productName": "Kenshi翻訳ヘルパー",
+    "productName": "Kenshiツール",
     "directories": {
       "output": "release"
     },

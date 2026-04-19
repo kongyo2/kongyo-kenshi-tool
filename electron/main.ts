@@ -28,7 +28,7 @@ const createWindow = async () => {
     minHeight: 760,
     backgroundColor: '#17120f',
     show: false,
-    title: 'Kenshi翻訳ヘルパー',
+    title: 'Kenshiツール',
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -154,11 +154,11 @@ const registerIpc = () => {
       filters: [
         {
           extensions: ['mod'],
-          name: 'Kenshi mod',
+          name: 'Kenshi modファイル',
         },
       ],
       properties: ['openFile', 'multiSelections'],
-      title: 'Kenshi modファイルを選択',
+      title: 'modファイルを選択',
     });
 
     return result.canceled ? [] : result.filePaths;
@@ -189,7 +189,7 @@ const registerIpc = () => {
       filters: [
         {
           extensions: ['mod'],
-          name: 'Kenshi translation mod',
+          name: '翻訳modファイル',
         },
       ],
       title: '翻訳modの保存先を選択',

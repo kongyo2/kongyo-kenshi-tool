@@ -172,7 +172,7 @@ const buildEditorRows = (
         recordIndex,
         section: 'name',
         stringId: record.stringId,
-        subtitle: `type ${record.type}`,
+        subtitle: `種別 ${record.type}`,
         textId: '',
         title: '名称',
         translation: record.nameTranslation,
@@ -476,11 +476,10 @@ const App = () => {
     <div className="app-shell">
       <header className="hero-panel">
         <div className="hero-copy">
-          <p className="eyebrow">Windows専用 / 手動翻訳専用</p>
-          <h1>Kenshi翻訳ヘルパー</h1>
+          <p className="eyebrow">Windows用デスクトップアプリ</p>
+          <h1>Kenshiツール</h1>
           <p className="hero-text">
-            参考元の挙動を踏まえつつ、CSV とブラウザ機械翻訳依存を削り、
-            mod を直接読み込んで翻訳用 .mod を書き出すデスクトップアプリへ移植しました。
+            mod を読み込み、手動翻訳を編集して翻訳用 .mod を書き出せます。
           </p>
         </div>
         <div className="hero-meta">
@@ -513,7 +512,7 @@ const App = () => {
             }}
             onDrop={handleDrop}
           >
-            <p className="dropzone-title">Drop mod files here</p>
+            <p className="dropzone-title">modファイルをここにドロップ</p>
             <p className="dropzone-text">
               .mod ファイルのドラッグ&ドロップに対応しています。
               フォルダ読み込みは下のボタンから選択してください。
@@ -569,7 +568,7 @@ const App = () => {
             WordSwap を記号へ置換して読み込む
           </label>
           <p className="subtle-text">
-            参考元と同じく、この設定は読み込み時のみ反映されます。
+            この設定は読み込み時のみ反映されます。
           </p>
 
           {notice ? (
@@ -736,7 +735,7 @@ const App = () => {
                             {sectionLabels[row.section]}
                           </span>
                           <span className="entry-token">
-                            type {row.type}
+                            種別 {row.type}
                           </span>
                           <span className="entry-token">{row.stringId}</span>
                           {row.textId.length > 0 ? (

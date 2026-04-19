@@ -551,7 +551,7 @@ export const createTranslationModBuffer = (
   writeInt(writer, 16);
   writeInt(writer, 1);
   writeString(writer, '');
-  writeString(writer, `translation of ${dependencyList}`);
+  writeString(writer, `${dependencyList} の翻訳`);
   writeString(writer, dependencyList);
   writeString(writer, '');
   writeInt(writer, 0x004c67a6);
