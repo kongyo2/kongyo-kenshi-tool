@@ -340,7 +340,7 @@ const App = () => {
                 matcher,
                 (match) => {
                   replaced += 1;
-                  return replacement.replace(/\$/g, match);
+                  return replacement.replace(/\$/g, () => match);
                 },
               );
 
@@ -358,7 +358,7 @@ const App = () => {
           if (nameTranslation.length > 0) {
             const nextName = nameTranslation.replace(matcher, (match) => {
               replaced += 1;
-              return replacement.replace(/\$/g, match);
+              return replacement.replace(/\$/g, () => match);
             });
             nameTranslation = nextName;
           }
@@ -370,7 +370,7 @@ const App = () => {
               matcher,
               (match) => {
                 replaced += 1;
-                return replacement.replace(/\$/g, match);
+                return replacement.replace(/\$/g, () => match);
               },
             );
             descriptionTranslation = nextDesc;

@@ -340,12 +340,16 @@ const readHeaderAndCount = (cursor: BinaryCursor): ParsedHeaderResult => {
 };
 
 export const parseMod = (
-  buffer: ArrayBuffer,
+  data: ArrayBuffer | Uint8Array,
   modName: string,
+  uidPrefix: string = modName,
 ): ParsedMod => {
   const cursor: BinaryCursor = {
     position: 0,
-    view: new DataView(buffer),
+    view:
+      data instanceof Uint8Array
+        ? new DataView(data.buffer, data.byteOffset, data.byteLength)
+        : new DataView(data),
   };
 
   const { header, recordCount } = readHeaderAndCount(cursor);
@@ -368,11 +372,10 @@ export const parseMod = (
     };
 
     const typeDefinition = getItemTypeDefinition(type);
-    const canEditEntityFields =
-      (typeDefinition?.translatable ?? false) &&
-      type !== dialogTypeCode &&
-      (dataType & 0b11) !== 1;
+    const isTypeTranslatable = typeDefinition?.translatable ?? false;
     const isDialogType = type === dialogTypeCode;
+    const canEditName =
+      isTypeTranslatable && !isDialogType && (dataType & 0b11) !== 1;
 
     let description = '';
     const dialogTexts: DialogText[] = [];
@@ -392,7 +395,7 @@ export const parseMod = (
       const value = readString(cursor);
       strings.push({ key, value });
 
-      if (key === 'description' && canEditEntityFields) {
+      if (key === 'description' && isTypeTranslatable && !isDialogType) {
         description = value;
       }
 
@@ -429,6 +432,7 @@ export const parseMod = (
       stringId,
       strings,
       type,
+      uid: `${uidPrefix}:${recordIndex}`,
     });
 
     if (isDialogType && dialogTexts.length > 0) {
@@ -440,7 +444,7 @@ export const parseMod = (
       continue;
     }
 
-    if (canEditEntityFields) {
+    if (canEditName || (isTypeTranslatable && description.length > 0)) {
       translationRecords.push({
         ...baseRecord,
         description,

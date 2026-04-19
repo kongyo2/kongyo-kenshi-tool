@@ -63,6 +63,7 @@ export const inspectorRecordSchema = z.object({
     }),
   ),
   type: z.number().int(),
+  uid: z.string(),
 });
 
 export const loadedModSchema = z.object({

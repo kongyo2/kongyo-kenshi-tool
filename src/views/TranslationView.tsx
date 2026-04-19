@@ -455,7 +455,9 @@ export const TranslationView = ({
                     `entry-${row.section}`,
                     `category-${row.category}`,
                   )}
+                  data-index={virtualItem.index}
                   key={row.id}
+                  ref={virtualizer.measureElement}
                   style={{
                     transform: `translateY(${virtualItem.start}px)`,
                   }}

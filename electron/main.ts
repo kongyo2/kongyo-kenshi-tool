@@ -129,12 +129,8 @@ const parseProject = async (input: LoadModsRequest) => {
 
   for (const modPath of modPaths) {
     const fileBuffer = await readFile(modPath);
-    const arrayBuffer = fileBuffer.buffer.slice(
-      fileBuffer.byteOffset,
-      fileBuffer.byteOffset + fileBuffer.byteLength,
-    );
     const modName = path.basename(modPath, '.mod');
-    const parsed = parseMod(arrayBuffer, modName);
+    const parsed = parseMod(fileBuffer, modName, modPath);
 
     dependencies.push(modName);
     records.push(...parsed.translationRecords);

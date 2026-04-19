@@ -106,8 +106,7 @@ export const InspectorView = ({ records }: InspectorViewProps) => {
     count: filteredRecords.length,
     estimateSize: (index) => {
       const record = filteredRecords[index];
-      const key = `${record.modName}:${record.stringId}`;
-      return expandedId === key ? 520 : 132;
+      return expandedId === record.uid ? 520 : 132;
     },
     getScrollElement: () => listRef.current,
     overscan: 8,
@@ -188,8 +187,7 @@ export const InspectorView = ({ records }: InspectorViewProps) => {
             {virtualizer.getVirtualItems().map((virtualItem) => {
               const record = filteredRecords[virtualItem.index];
               const category = getItemCategory(record.type);
-              const key = `${record.modName}:${record.stringId}`;
-              const isExpanded = expandedId === key;
+              const isExpanded = expandedId === record.uid;
 
               return (
                 <article
@@ -199,7 +197,7 @@ export const InspectorView = ({ records }: InspectorViewProps) => {
                     { 'is-expanded': isExpanded },
                   )}
                   data-index={virtualItem.index}
-                  key={key}
+                  key={record.uid}
                   ref={virtualizer.measureElement}
                   style={{
                     transform: `translateY(${virtualItem.start}px)`,
@@ -207,7 +205,7 @@ export const InspectorView = ({ records }: InspectorViewProps) => {
                 >
                   <button
                     className="inspector-card-header"
-                    onClick={() => toggleExpanded(key)}
+                    onClick={() => toggleExpanded(record.uid)}
                     type="button"
                   >
                     <div className="inspector-card-primary">
