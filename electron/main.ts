@@ -124,10 +124,7 @@ const parseProject = async (input: LoadModsRequest) => {
       fileBuffer.byteOffset,
       fileBuffer.byteOffset + fileBuffer.byteLength,
     );
-    const parsedRecords = parseModBuffer(
-      arrayBuffer,
-      input.replaceWordSwap,
-    );
+    const parsedRecords = parseModBuffer(arrayBuffer);
 
     dependencies.push(path.basename(modPath, '.mod'));
     records.push(...parsedRecords);
@@ -142,7 +139,6 @@ const parseProject = async (input: LoadModsRequest) => {
   return {
     dependencies: uniquePreserveOrder(dependencies),
     records,
-    replaceWordSwap: input.replaceWordSwap,
     sourceModName:
       uniquePreserveOrder(dependencies)[0] ?? 'unknown',
   };
@@ -202,10 +198,7 @@ const registerIpc = () => {
       });
     }
 
-    const buffer = createTranslationModBuffer(
-      input.project,
-      input.exportOptions,
-    );
+    const buffer = createTranslationModBuffer(input.project);
     await writeFile(dialogResult.filePath, Buffer.from(buffer));
 
     return saveTranslationModResponseSchema.parse({

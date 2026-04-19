@@ -1,7 +1,6 @@
 import type {
   DialogRecord,
   DialogText,
-  ExportOptions,
   TranslationProject,
   TranslationRecord,
 } from './models.ts';
@@ -10,16 +9,6 @@ const editableTypeCodes = new Set([
   0, 1, 2, 3, 4, 7, 10, 13, 21, 46, 51, 62, 64, 76, 107, 111,
 ]);
 const dialogTypeCode = 19;
-const wordSwapMarkers = [
-  '∩∩∩',
-  '∪∪∪',
-  '⊂⊂⊂',
-  '⊃⊃⊃',
-  '⊆⊆⊆',
-  '⊇⊇⊇',
-  '∈∈∈',
-  '∋∋∋',
-];
 
 interface BinaryCursor {
   position: number;
@@ -77,8 +66,7 @@ const ensureWriterCapacity = (
   }
 
   const nextBuffer = new ArrayBuffer(nextSize);
-  const currentBytes = new Uint8Array(writer.buffer);
-  new Uint8Array(nextBuffer).set(currentBytes);
+  new Uint8Array(nextBuffer).set(new Uint8Array(writer.buffer));
   writer.buffer = nextBuffer;
   writer.view = new DataView(nextBuffer);
 };
@@ -150,73 +138,6 @@ const writeString = (writer: BinaryWriter, value: string) => {
 
 const toArrayBuffer = (writer: BinaryWriter) =>
   writer.buffer.slice(0, writer.position);
-
-const swapWordsInText = (value: string) => {
-  const uniqueWords = Array.from(
-    new Set(value.match(/\/.+?\//g) ?? []),
-  ).slice(0, wordSwapMarkers.length);
-  let swappedText = value;
-
-  uniqueWords.forEach((currentWord, index) => {
-    const escapedWord = currentWord.replace(
-      /[.*+?^${}()|[\]\\]/g,
-      '\\$&',
-    );
-    swappedText = swappedText.replace(
-      new RegExp(escapedWord, 'g'),
-      wordSwapMarkers[index],
-    );
-  });
-
-  return {
-    swappedText,
-    wordswapMap: uniqueWords,
-  };
-};
-
-const restoreWordSwap = (value: string, wordswapMap: string[]) => {
-  let restoredText = value;
-
-  wordswapMap.forEach((currentWord, index) => {
-    restoredText = restoredText.replace(
-      new RegExp(wordSwapMarkers[index], 'g'),
-      currentWord,
-    );
-  });
-
-  return restoredText;
-};
-
-const swapWordsInDialogTexts = (texts: DialogText[]) => {
-  const combinedText = texts.map((text) => text.original).join('\n');
-  const uniqueWords = Array.from(
-    new Set(combinedText.match(/\/.+?\//g) ?? []),
-  ).slice(0, wordSwapMarkers.length);
-
-  const swappedTexts = texts.map((text) => {
-    let currentOriginal = text.original;
-    uniqueWords.forEach((currentWord, index) => {
-      const escapedWord = currentWord.replace(
-        /[.*+?^${}()|[\]\\]/g,
-        '\\$&',
-      );
-      currentOriginal = currentOriginal.replace(
-        new RegExp(escapedWord, 'g'),
-        wordSwapMarkers[index],
-      );
-    });
-
-    return {
-      ...text,
-      original: currentOriginal,
-    };
-  });
-
-  return {
-    swappedTexts,
-    wordswapMap: uniqueWords,
-  };
-};
 
 const skipBooleanBlock = (cursor: BinaryCursor) => {
   let count = readInt(cursor);
@@ -361,10 +282,7 @@ const readHeader = (cursor: BinaryCursor) => {
   throw new Error('未対応のmod形式です。');
 };
 
-export const parseModBuffer = (
-  buffer: ArrayBuffer,
-  replaceWordSwap: boolean,
-) => {
+export const parseModBuffer = (buffer: ArrayBuffer) => {
   const cursor: BinaryCursor = {
     position: 0,
     view: new DataView(buffer),
@@ -383,7 +301,6 @@ export const parseModBuffer = (
       name,
       stringId,
       type,
-      wordswapMap: [] as string[],
     };
     let shouldIncludeRecord = false;
     const canEditNameOrDescription =
@@ -407,13 +324,7 @@ export const parseModBuffer = (
       const value = readString(cursor);
 
       if (key === 'description' && editableTypeCodes.has(type)) {
-        if (replaceWordSwap) {
-          const swappedDescription = swapWordsInText(value);
-          description = swappedDescription.swappedText;
-          baseRecord.wordswapMap = swappedDescription.wordswapMap;
-        } else {
-          description = value;
-        }
+        description = value;
         shouldIncludeRecord = true;
       }
 
@@ -434,15 +345,7 @@ export const parseModBuffer = (
     skipInstanceDataBlock(cursor);
 
     if (type === dialogTypeCode) {
-      if (replaceWordSwap && shouldIncludeRecord) {
-        const swappedTexts = swapWordsInDialogTexts(dialogTexts);
-        parsedRecords.push({
-          ...baseRecord,
-          kind: 'dialog',
-          texts: swappedTexts.swappedTexts,
-          wordswapMap: swappedTexts.wordswapMap,
-        } satisfies DialogRecord);
-      } else if (shouldIncludeRecord) {
+      if (shouldIncludeRecord) {
         parsedRecords.push({
           ...baseRecord,
           kind: 'dialog',
@@ -465,26 +368,18 @@ export const parseModBuffer = (
   return parsedRecords;
 };
 
-const createExportRecords = (
+export const createTranslationModBuffer = (
   project: TranslationProject,
-  exportOptions: ExportOptions,
 ) => {
   const exportRecords: ExportRecord[] = [];
 
   for (const record of project.records) {
     if (record.kind === 'dialog') {
-      if (!exportOptions.includeDialogs) {
-        continue;
-      }
-
       const translatedTexts = record.texts
         .filter((text) => text.translation.length > 0)
         .map((text) => ({
           textId: text.textId,
-          translation:
-            record.wordswapMap.length > 0
-              ? restoreWordSwap(text.translation, record.wordswapMap)
-              : text.translation,
+          translation: text.translation,
         }));
 
       if (translatedTexts.length > 0) {
@@ -500,42 +395,22 @@ const createExportRecords = (
       continue;
     }
 
-    const nameTranslation = exportOptions.includeNames
-      ? record.nameTranslation
-      : '';
-    const descriptionTranslation = exportOptions.includeDescriptions
-      ? record.descriptionTranslation
-      : '';
-    const restoredDescription =
-      descriptionTranslation.length > 0 && record.wordswapMap.length > 0
-        ? restoreWordSwap(descriptionTranslation, record.wordswapMap)
-        : descriptionTranslation;
-
     if (
-      nameTranslation.length === 0 &&
-      restoredDescription.length === 0
+      record.nameTranslation.length === 0 &&
+      record.descriptionTranslation.length === 0
     ) {
       continue;
     }
 
     exportRecords.push({
-      descriptionTranslation: restoredDescription,
+      descriptionTranslation: record.descriptionTranslation,
       kind: 'entity',
       name: record.name,
-      nameTranslation,
+      nameTranslation: record.nameTranslation,
       stringId: record.stringId,
       type: record.type,
     });
   }
-
-  return exportRecords;
-};
-
-export const createTranslationModBuffer = (
-  project: TranslationProject,
-  exportOptions: ExportOptions,
-) => {
-  const exportRecords = createExportRecords(project, exportOptions);
 
   if (exportRecords.length === 0) {
     throw new Error(
@@ -567,10 +442,8 @@ export const createTranslationModBuffer = (
 
     if (record.kind === 'entity' && hasNameTranslation) {
       writeString(writer, record.nameTranslation);
-    } else if (record.kind === 'entity' || record.kind === 'dialog') {
-      writeString(writer, record.name);
     } else {
-      writeString(writer, '');
+      writeString(writer, record.name);
     }
 
     writeString(writer, record.stringId);

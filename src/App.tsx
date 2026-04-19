@@ -9,7 +9,6 @@ import {
 import { useVirtualizer } from '@tanstack/react-virtual';
 import cx from 'clsx';
 import type {
-  ExportOptions,
   TranslationProject,
   TranslationRecord,
 } from './shared/models.ts';
@@ -34,7 +33,6 @@ interface EditorRow {
   title: string;
   translation: string;
   type: number;
-  wordswapCount: number;
 }
 
 interface ProjectStats {
@@ -45,12 +43,6 @@ interface ProjectStats {
   translatedCount: number;
   totalCount: number;
 }
-
-const initialExportOptions: ExportOptions = {
-  includeDescriptions: true,
-  includeDialogs: true,
-  includeNames: false,
-};
 
 const sectionLabels: Record<SectionFilter, string> = {
   all: 'すべて',
@@ -138,7 +130,6 @@ const buildEditorRows = (
           title: 'ダイアログ',
           translation: text.translation,
           type: record.type,
-          wordswapCount: record.wordswapMap.length,
         };
 
         if (searchToken.length === 0) {
@@ -177,7 +168,6 @@ const buildEditorRows = (
         title: '名称',
         translation: record.nameTranslation,
         type: record.type,
-        wordswapCount: record.wordswapMap.length,
       };
 
       const searchTarget = normaliseSearchTarget(
@@ -213,7 +203,6 @@ const buildEditorRows = (
         title: '説明文',
         translation: record.descriptionTranslation,
         type: record.type,
-        wordswapCount: record.wordswapMap.length,
       };
 
       const searchTarget = normaliseSearchTarget(
@@ -260,8 +249,6 @@ const getErrorMessage = (error: unknown) => {
 
 const App = () => {
   const [project, setProject] = useState<TranslationProject | null>(null);
-  const [replaceWordSwap, setReplaceWordSwap] = useState(true);
-  const [exportOptions, setExportOptions] = useState(initialExportOptions);
   const [searchText, setSearchText] = useState('');
   const [sectionFilter, setSectionFilter] = useState<SectionFilter>('all');
   const [notice, setNotice] = useState<NoticeState | null>(null);
@@ -379,7 +366,6 @@ const App = () => {
     try {
       const loadedProject = await window.electronApi.loadMods({
         paths,
-        replaceWordSwap,
       });
       startTransition(() => {
         setProject(loadedProject);
@@ -423,7 +409,6 @@ const App = () => {
 
     try {
       const result = await window.electronApi.saveTranslationMod({
-        exportOptions,
         project,
       });
 
@@ -557,20 +542,6 @@ const App = () => {
             </button>
           </div>
 
-          <label className="toggle-line">
-            <input
-              checked={replaceWordSwap}
-              onChange={(event) => {
-                setReplaceWordSwap(event.target.checked);
-              }}
-              type="checkbox"
-            />
-            WordSwap を記号へ置換して読み込む
-          </label>
-          <p className="subtle-text">
-            この設定は読み込み時のみ反映されます。
-          </p>
-
           {notice ? (
             <div className={cx('notice', noticeClassNames[notice.kind])}>
               {notice.message}
@@ -595,50 +566,6 @@ const App = () => {
         </section>
 
         <section className="panel info-panel">
-          <h2>出力設定</h2>
-          <label className="toggle-line">
-            <input
-              checked={exportOptions.includeDialogs}
-              onChange={(event) => {
-                setExportOptions((currentOptions) => ({
-                  ...currentOptions,
-                  includeDialogs: event.target.checked,
-                }));
-              }}
-              type="checkbox"
-            />
-            ダイアログの翻訳を出力する
-          </label>
-          <label className="toggle-line">
-            <input
-              checked={exportOptions.includeDescriptions}
-              onChange={(event) => {
-                setExportOptions((currentOptions) => ({
-                  ...currentOptions,
-                  includeDescriptions: event.target.checked,
-                }));
-              }}
-              type="checkbox"
-            />
-            説明文の翻訳を出力する
-          </label>
-          <label className="toggle-line">
-            <input
-              checked={exportOptions.includeNames}
-              onChange={(event) => {
-                setExportOptions((currentOptions) => ({
-                  ...currentOptions,
-                  includeNames: event.target.checked,
-                }));
-              }}
-              type="checkbox"
-            />
-            名称の翻訳を出力する
-          </label>
-          <p className="warning-text">
-            名称翻訳は重複や文脈崩れを起こしやすいため、機械的に埋めず手動調整前提で使ってください。
-          </p>
-
           <h2>読み込み中のmod</h2>
           {project ? (
             <div className="tag-list">
@@ -741,11 +668,6 @@ const App = () => {
                           {row.textId.length > 0 ? (
                             <span className="entry-token">
                               {row.textId}
-                            </span>
-                          ) : null}
-                          {row.wordswapCount > 0 ? (
-                            <span className="entry-token">
-                              WordSwap {row.wordswapCount}
                             </span>
                           ) : null}
                         </div>

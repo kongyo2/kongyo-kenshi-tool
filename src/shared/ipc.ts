@@ -1,16 +1,11 @@
 import { z } from 'zod';
-import {
-  exportOptionsSchema,
-  translationProjectSchema,
-} from './models.ts';
+import { translationProjectSchema } from './models.ts';
 
 export const loadModsRequestSchema = z.object({
   paths: z.array(z.string()).min(1),
-  replaceWordSwap: z.boolean(),
 });
 
 export const saveTranslationModRequestSchema = z.object({
-  exportOptions: exportOptionsSchema,
   project: translationProjectSchema,
 });
 
@@ -38,4 +33,3 @@ export interface ElectronApi {
   ) => Promise<SaveTranslationModResponse>;
   revealFileInFolder: (filePath: string) => Promise<void>;
 }
-
