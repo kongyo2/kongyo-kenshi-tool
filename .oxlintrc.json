@@ -1,0 +1,20 @@
+{
+  "plugins": ["promise", "import", "node"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "rules": {
+    "import/no-unassigned-import": "off",
+    "no-console": "warn",
+    "typescript/no-explicit-any": "error"
+  },
+  "ignorePatterns": [
+    "node_modules",
+    "dist",
+    "dist-electron",
+    "release",
+    "coverage",
+    "*.min.js"
+  ]
+}

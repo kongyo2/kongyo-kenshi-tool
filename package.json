@@ -1,0 +1,66 @@
+{
+  "name": "kongyo-kenshi-tool",
+  "version": "1.0.0",
+  "description": "Kenshiのmodを手動翻訳して翻訳用.modを出力するWindows専用デスクトップアプリ",
+  "private": true,
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint --silent .",
+    "lint:strict": "oxlint --deny-warnings .",
+    "check:file": "oxlint",
+    "check": "npm run typecheck && npm run lint:strict && npm run build",
+    "dist": "npm run check && electron-builder --win portable"
+  },
+  "keywords": [
+    "electron",
+    "kenshi",
+    "translation",
+    "vite",
+    "react"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
+  "dependencies": {
+    "@tanstack/react-virtual": "^3.13.24",
+    "clsx": "^2.1.1",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "electron": "^41.2.1",
+    "electron-builder": "^26.8.1",
+    "oxlint": "^1.60.0",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.8",
+    "vite-plugin-electron": "^0.29.1"
+  },
+  "build": {
+    "appId": "jp.prett.kongyo.kenshi.tool",
+    "productName": "Kenshi翻訳ヘルパー",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "dist-electron/**",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    }
+  }
+}
