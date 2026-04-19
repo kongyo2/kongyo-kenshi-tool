@@ -1,408 +1,148 @@
 import {
-  type DragEventHandler,
-  useDeferredValue,
+  useCallback,
   useMemo,
-  useRef,
   useState,
   useTransition,
+  type DragEventHandler,
 } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
-import cx from 'clsx';
+import {
+  CloseIcon,
+  DownloadIcon,
+  FileIcon,
+  FolderIcon,
+  InspectorIcon,
+  ModsIcon,
+  OpenIcon,
+  OverviewIcon,
+  SaveIcon,
+  TranslateIcon,
+  UploadIcon,
+} from './components/Icons.tsx';
+import { LoaderPanel } from './components/LoaderPanel.tsx';
+import { Notice, type NoticeState } from './components/Notice.tsx';
+import { Sidebar, type SidebarItem, type ViewId } from './components/Sidebar.tsx';
+import { countProjectStats } from './lib/project-stats.ts';
+import {
+  extractDroppedPaths,
+  formatNumber,
+  formatPercentage,
+  getErrorMessage,
+} from './lib/utils.ts';
+import { translationProjectSchema } from './shared/models.ts';
 import type {
+  DialogRecord,
+  EntityRecord,
   TranslationProject,
   TranslationRecord,
 } from './shared/models.ts';
-
-type NoticeKind = 'error' | 'info' | 'success';
-type SectionFilter = 'all' | 'description' | 'dialog' | 'name';
-
-interface NoticeState {
-  kind: NoticeKind;
-  message: string;
-}
-
-interface EditorRow {
-  id: string;
-  itemIndex: number;
-  original: string;
-  recordIndex: number;
-  section: Exclude<SectionFilter, 'all'>;
-  stringId: string;
-  subtitle: string;
-  textId: string;
-  title: string;
-  translation: string;
-  type: number;
-}
-
-interface ProjectStats {
-  descriptionCount: number;
-  dialogCount: number;
-  nameCount: number;
-  recordCount: number;
-  translatedCount: number;
-  totalCount: number;
-}
-
-const sectionLabels: Record<SectionFilter, string> = {
-  all: 'すべて',
-  description: '説明文',
-  dialog: 'ダイアログ',
-  name: '名称',
-};
-
-const noticeClassNames: Record<NoticeKind, string> = {
-  error: 'notice-error',
-  info: 'notice-info',
-  success: 'notice-success',
-};
+import { InspectorView } from './views/InspectorView.tsx';
+import { ModsView } from './views/ModsView.tsx';
+import { OverviewView } from './views/OverviewView.tsx';
+import { TranslationView } from './views/TranslationView.tsx';
 
 const replaceAt = <T,>(items: T[], index: number, value: T) =>
   items.map((item, currentIndex) =>
     currentIndex === index ? value : item,
   );
 
-const normaliseSearchTarget = (value: string) =>
-  value.toLocaleLowerCase('ja');
-
-const countProjectStats = (project: TranslationProject): ProjectStats => {
-  let dialogCount = 0;
-  let nameCount = 0;
-  let descriptionCount = 0;
-  let translatedCount = 0;
-
-  for (const record of project.records) {
-    if (record.kind === 'dialog') {
-      dialogCount += record.texts.length;
-      translatedCount += record.texts.filter(
-        (text) => text.translation.length > 0,
-      ).length;
-      continue;
-    }
-
-    nameCount += 1;
-    if (record.nameTranslation.length > 0) {
-      translatedCount += 1;
-    }
-
-    if (record.description.length > 0) {
-      descriptionCount += 1;
-      if (record.descriptionTranslation.length > 0) {
-        translatedCount += 1;
-      }
-    }
-  }
-
-  return {
-    descriptionCount,
-    dialogCount,
-    nameCount,
-    recordCount: project.records.length,
-    totalCount: dialogCount + nameCount + descriptionCount,
-    translatedCount,
-  };
-};
-
-const buildEditorRows = (
-  project: TranslationProject,
-  sectionFilter: SectionFilter,
-  searchText: string,
-) => {
-  const searchToken = normaliseSearchTarget(searchText.trim());
-  const rows: EditorRow[] = [];
-
-  project.records.forEach((record, recordIndex) => {
-    if (record.kind === 'dialog') {
-      record.texts.forEach((text, textIndex) => {
-        if (sectionFilter !== 'all' && sectionFilter !== 'dialog') {
-          return;
-        }
-
-        const row: EditorRow = {
-          id: `${record.stringId}:dialog:${text.textId}`,
-          itemIndex: textIndex,
-          original: text.original,
-          recordIndex,
-          section: 'dialog',
-          stringId: record.stringId,
-          subtitle: record.name,
-          textId: text.textId,
-          title: 'ダイアログ',
-          translation: text.translation,
-          type: record.type,
-        };
-
-        if (searchToken.length === 0) {
-          rows.push(row);
-          return;
-        }
-
-        const searchTarget = normaliseSearchTarget(
-          [
-            row.original,
-            row.translation,
-            row.stringId,
-            row.subtitle,
-            row.textId,
-          ].join('\n'),
-        );
-
-        if (searchTarget.includes(searchToken)) {
-          rows.push(row);
-        }
-      });
-
-      return;
-    }
-
-    if (sectionFilter === 'all' || sectionFilter === 'name') {
-      const nameRow: EditorRow = {
-        id: `${record.stringId}:name`,
-        itemIndex: -1,
-        original: record.name,
-        recordIndex,
-        section: 'name',
-        stringId: record.stringId,
-        subtitle: `種別 ${record.type}`,
-        textId: '',
-        title: '名称',
-        translation: record.nameTranslation,
-        type: record.type,
-      };
-
-      const searchTarget = normaliseSearchTarget(
-        [
-          nameRow.original,
-          nameRow.translation,
-          nameRow.stringId,
-          nameRow.subtitle,
-        ].join('\n'),
-      );
-
-      if (
-        searchToken.length === 0 ||
-        searchTarget.includes(searchToken)
-      ) {
-        rows.push(nameRow);
-      }
-    }
-
-    if (
-      record.description.length > 0 &&
-      (sectionFilter === 'all' || sectionFilter === 'description')
-    ) {
-      const descriptionRow: EditorRow = {
-        id: `${record.stringId}:description`,
-        itemIndex: -1,
-        original: record.description,
-        recordIndex,
-        section: 'description',
-        stringId: record.stringId,
-        subtitle: record.name,
-        textId: '',
-        title: '説明文',
-        translation: record.descriptionTranslation,
-        type: record.type,
-      };
-
-      const searchTarget = normaliseSearchTarget(
-        [
-          descriptionRow.original,
-          descriptionRow.translation,
-          descriptionRow.stringId,
-          descriptionRow.subtitle,
-        ].join('\n'),
-      );
-
-      if (
-        searchToken.length === 0 ||
-        searchTarget.includes(searchToken)
-      ) {
-        rows.push(descriptionRow);
-      }
-    }
-  });
-
-  return rows;
-};
-
-const extractDroppedPaths = (fileList: FileList) => {
-  const droppedPaths: string[] = [];
-
-  for (const currentFile of Array.from(fileList)) {
-    const maybePath = (currentFile as File & { path?: string }).path;
-    if (typeof maybePath === 'string' && maybePath.length > 0) {
-      droppedPaths.push(maybePath);
-    }
-  }
-
-  return Array.from(new Set(droppedPaths));
-};
-
-const getErrorMessage = (error: unknown) => {
-  if (error instanceof Error && error.message.length > 0) {
-    return error.message;
-  }
-
-  return '不明なエラーが発生しました。';
-};
+const escapeRegExp = (value: string) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const App = () => {
   const [project, setProject] = useState<TranslationProject | null>(null);
-  const [searchText, setSearchText] = useState('');
-  const [sectionFilter, setSectionFilter] = useState<SectionFilter>('all');
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isLoadingProject, setIsLoadingProject] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [lastSavedPath, setLastSavedPath] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
-  const listRef = useRef<HTMLDivElement | null>(null);
-  const deferredSearchText = useDeferredValue(searchText);
+  const [activeView, setActiveView] = useState<ViewId>('overview');
+  const [, startTransition] = useTransition();
 
   const stats = useMemo(
     () => (project ? countProjectStats(project) : null),
     [project],
   );
-  const editorRows = useMemo(
-    () =>
-      project
-        ? buildEditorRows(project, sectionFilter, deferredSearchText)
-        : [],
-    [deferredSearchText, project, sectionFilter],
+
+  const isBusy = isLoadingProject || isSaving;
+
+  const showNotice = useCallback((next: NoticeState) => {
+    setNotice(next);
+  }, []);
+
+  const loadFromPaths = useCallback(
+    async (paths: string[]) => {
+      if (paths.length === 0) {
+        return;
+      }
+
+      setIsLoadingProject(true);
+      setLastSavedPath(null);
+      showNotice({
+        kind: 'info',
+        message: 'modを読み込んでいます。',
+      });
+
+      try {
+        const loadedProject = await window.electronApi.loadMods({
+          paths,
+        });
+        startTransition(() => {
+          setProject(loadedProject);
+          setActiveView('overview');
+        });
+        showNotice({
+          kind: 'success',
+          message: `${formatNumber(loadedProject.records.length)}件の翻訳対象レコードを読み込みました。`,
+        });
+      } catch (error) {
+        showNotice({
+          kind: 'error',
+          message: getErrorMessage(error),
+        });
+      } finally {
+        setIsLoadingProject(false);
+      }
+    },
+    [showNotice],
   );
 
-  const virtualizer = useVirtualizer({
-    count: editorRows.length,
-    estimateSize: () => 320,
-    getScrollElement: () => listRef.current,
-    overscan: 6,
-  });
-
-  const updateDialogTranslation = (
-    recordIndex: number,
-    textIndex: number,
-    value: string,
-  ) => {
-    setProject((currentProject) => {
-      if (!currentProject) {
-        return currentProject;
-      }
-
-      const currentRecord = currentProject.records[recordIndex];
-      if (!currentRecord || currentRecord.kind !== 'dialog') {
-        return currentProject;
-      }
-
-      const nextTexts = replaceAt(currentRecord.texts, textIndex, {
-        ...currentRecord.texts[textIndex],
-        translation: value,
-      });
-      const nextRecord: TranslationRecord = {
-        ...currentRecord,
-        texts: nextTexts,
-      };
-
-      return {
-        ...currentProject,
-        records: replaceAt(
-          currentProject.records,
-          recordIndex,
-          nextRecord,
-        ),
-      };
-    });
-  };
-
-  const updateEntityTranslation = (
-    recordIndex: number,
-    section: 'description' | 'name',
-    value: string,
-  ) => {
-    setProject((currentProject) => {
-      if (!currentProject) {
-        return currentProject;
-      }
-
-      const currentRecord = currentProject.records[recordIndex];
-      if (!currentRecord || currentRecord.kind !== 'entity') {
-        return currentProject;
-      }
-
-      const nextRecord: TranslationRecord =
-        section === 'name'
-          ? {
-              ...currentRecord,
-              nameTranslation: value,
-            }
-          : {
-              ...currentRecord,
-              descriptionTranslation: value,
-            };
-
-      return {
-        ...currentProject,
-        records: replaceAt(
-          currentProject.records,
-          recordIndex,
-          nextRecord,
-        ),
-      };
-    });
-  };
-
-  const loadFromPaths = async (paths: string[]) => {
-    if (paths.length === 0) {
-      return;
-    }
-
-    setIsLoadingProject(true);
-    setLastSavedPath(null);
-    setNotice({
-      kind: 'info',
-      message: 'modを読み込んでいます。',
-    });
-
-    try {
-      const loadedProject = await window.electronApi.loadMods({
-        paths,
-      });
-      startTransition(() => {
-        setProject(loadedProject);
-        setSearchText('');
-        setSectionFilter('all');
-      });
-      setNotice({
-        kind: 'success',
-        message: `${loadedProject.records.length}件のレコードを読み込みました。`,
-      });
-    } catch (error) {
-      setNotice({
-        kind: 'error',
-        message: getErrorMessage(error),
-      });
-    } finally {
-      setIsLoadingProject(false);
-    }
-  };
-
-  const handlePickModFiles = async () => {
+  const handlePickModFiles = useCallback(async () => {
     const selectedPaths = await window.electronApi.pickModFiles();
     await loadFromPaths(selectedPaths);
-  };
+  }, [loadFromPaths]);
 
-  const handlePickModFolders = async () => {
+  const handlePickModFolders = useCallback(async () => {
     const selectedPaths = await window.electronApi.pickModFolders();
     await loadFromPaths(selectedPaths);
-  };
+  }, [loadFromPaths]);
 
-  const handleSave = async () => {
+  const handleDrop = useCallback<DragEventHandler<HTMLDivElement>>(
+    async (event) => {
+      event.preventDefault();
+      setIsDragging(false);
+      const droppedPaths = extractDroppedPaths(event.dataTransfer.files);
+
+      if (droppedPaths.length === 0) {
+        showNotice({
+          kind: 'error',
+          message:
+            'ドラッグ&ドロップからファイルパスを取得できませんでした。選択ボタンを使ってください。',
+        });
+        return;
+      }
+
+      await loadFromPaths(droppedPaths);
+    },
+    [loadFromPaths, showNotice],
+  );
+
+  const handleSave = useCallback(async () => {
     if (!project) {
       return;
     }
 
     setIsSaving(true);
-    setNotice({
+    showNotice({
       kind: 'info',
       message: '翻訳modを書き出しています。',
     });
@@ -413,7 +153,7 @@ const App = () => {
       });
 
       if (result.canceled) {
-        setNotice({
+        showNotice({
           kind: 'info',
           message: '保存をキャンセルしました。',
         });
@@ -421,309 +161,491 @@ const App = () => {
       }
 
       setLastSavedPath(result.filePath);
-      setNotice({
+      showNotice({
         kind: 'success',
         message: '翻訳modを保存しました。',
       });
     } catch (error) {
-      setNotice({
+      showNotice({
         kind: 'error',
         message: getErrorMessage(error),
       });
     } finally {
       setIsSaving(false);
     }
-  };
+  }, [project, showNotice]);
 
-  const handleDrop: DragEventHandler<HTMLDivElement> = async (
-    event,
-  ) => {
-    event.preventDefault();
-    setIsDragging(false);
-    const droppedPaths = extractDroppedPaths(event.dataTransfer.files);
-
-    if (droppedPaths.length === 0) {
-      setNotice({
-        kind: 'error',
-        message:
-          'ドラッグ&ドロップからファイルパスを取得できませんでした。選択ボタンを使ってください。',
-      });
+  const handleExportJson = useCallback(async () => {
+    if (!project) {
       return;
     }
 
-    await loadFromPaths(droppedPaths);
-  };
+    try {
+      const payload = JSON.stringify(project, null, 2);
+      const result = await window.electronApi.exportTranslationJson({
+        fileName: `${project.sourceModName}_translation.json`,
+        payload,
+      });
 
-  const hasEditableContent =
-    stats !== null && stats.translatedCount > 0;
+      if (result.canceled) {
+        showNotice({
+          kind: 'info',
+          message: 'プロジェクトのエクスポートをキャンセルしました。',
+        });
+        return;
+      }
+
+      showNotice({
+        kind: 'success',
+        message: `翻訳プロジェクトを保存しました: ${result.filePath}`,
+      });
+    } catch (error) {
+      showNotice({
+        kind: 'error',
+        message: getErrorMessage(error),
+      });
+    }
+  }, [project, showNotice]);
+
+  const handleImportJson = useCallback(async () => {
+    try {
+      const result = await window.electronApi.importTranslationJson();
+
+      if (result.canceled || !result.payload) {
+        showNotice({
+          kind: 'info',
+          message: 'インポートをキャンセルしました。',
+        });
+        return;
+      }
+
+      const parsedProject = translationProjectSchema.parse(
+        JSON.parse(result.payload),
+      );
+      startTransition(() => {
+        setProject(parsedProject);
+        setActiveView('overview');
+      });
+      showNotice({
+        kind: 'success',
+        message: `翻訳プロジェクトを復元しました。(${formatNumber(parsedProject.records.length)}レコード)`,
+      });
+    } catch (error) {
+      showNotice({
+        kind: 'error',
+        message: `プロジェクトの読み込みに失敗しました: ${getErrorMessage(error)}`,
+      });
+    }
+  }, [showNotice]);
+
+  const updateDialogTranslation = useCallback(
+    (recordIndex: number, textIndex: number, value: string) => {
+      setProject((currentProject) => {
+        if (!currentProject) {
+          return currentProject;
+        }
+
+        const currentRecord = currentProject.records[recordIndex];
+        if (!currentRecord || currentRecord.kind !== 'dialog') {
+          return currentProject;
+        }
+
+        const nextTexts = replaceAt(currentRecord.texts, textIndex, {
+          ...currentRecord.texts[textIndex],
+          translation: value,
+        });
+        const nextRecord: TranslationRecord = {
+          ...currentRecord,
+          texts: nextTexts,
+        };
+
+        return {
+          ...currentProject,
+          records: replaceAt(
+            currentProject.records,
+            recordIndex,
+            nextRecord,
+          ),
+        };
+      });
+    },
+    [],
+  );
+
+  const updateEntityTranslation = useCallback(
+    (
+      recordIndex: number,
+      section: 'description' | 'name',
+      value: string,
+    ) => {
+      setProject((currentProject) => {
+        if (!currentProject) {
+          return currentProject;
+        }
+
+        const currentRecord = currentProject.records[recordIndex];
+        if (!currentRecord || currentRecord.kind !== 'entity') {
+          return currentProject;
+        }
+
+        const nextRecord: TranslationRecord =
+          section === 'name'
+            ? {
+                ...currentRecord,
+                nameTranslation: value,
+              }
+            : {
+                ...currentRecord,
+                descriptionTranslation: value,
+              };
+
+        return {
+          ...currentProject,
+          records: replaceAt(
+            currentProject.records,
+            recordIndex,
+            nextRecord,
+          ),
+        };
+      });
+    },
+    [],
+  );
+
+  const replaceAllInProject = useCallback(
+    (
+      pattern: string,
+      replacement: string,
+      options: { caseSensitive: boolean; regex: boolean },
+    ): number => {
+      if (!project) {
+        return 0;
+      }
+
+      const flags = options.caseSensitive ? 'g' : 'gi';
+      const source = options.regex ? pattern : escapeRegExp(pattern);
+      const matcher = new RegExp(source, flags);
+      let replaced = 0;
+
+      const nextRecords = project.records.map(
+        (record): TranslationRecord => {
+          if (record.kind === 'dialog') {
+            const nextTexts = record.texts.map((text) => {
+              if (text.translation.length === 0) {
+                return text;
+              }
+
+              matcher.lastIndex = 0;
+              const nextValue = text.translation.replace(
+                matcher,
+                (match) => {
+                  replaced += 1;
+                  return replacement.replace(/\$/g, () => match);
+                },
+              );
+
+              return nextValue === text.translation
+                ? text
+                : { ...text, translation: nextValue };
+            });
+
+            const nextDialog: DialogRecord = { ...record, texts: nextTexts };
+            return nextDialog;
+          }
+
+          matcher.lastIndex = 0;
+          let nameTranslation = record.nameTranslation;
+          if (nameTranslation.length > 0) {
+            const nextName = nameTranslation.replace(matcher, (match) => {
+              replaced += 1;
+              return replacement.replace(/\$/g, () => match);
+            });
+            nameTranslation = nextName;
+          }
+
+          matcher.lastIndex = 0;
+          let descriptionTranslation = record.descriptionTranslation;
+          if (descriptionTranslation.length > 0) {
+            const nextDesc = descriptionTranslation.replace(
+              matcher,
+              (match) => {
+                replaced += 1;
+                return replacement.replace(/\$/g, () => match);
+              },
+            );
+            descriptionTranslation = nextDesc;
+          }
+
+          if (
+            nameTranslation === record.nameTranslation &&
+            descriptionTranslation === record.descriptionTranslation
+          ) {
+            return record;
+          }
+
+          const nextEntity: EntityRecord = {
+            ...record,
+            descriptionTranslation,
+            nameTranslation,
+          };
+          return nextEntity;
+        },
+      );
+
+      if (replaced > 0) {
+        setProject({ ...project, records: nextRecords });
+      }
+
+      return replaced;
+    },
+    [project],
+  );
+
+  const handleRevealFile = useCallback(async (filePath: string) => {
+    await window.electronApi.revealFileInFolder(filePath);
+  }, []);
+
+  const handleCloseProject = useCallback(() => {
+    setProject(null);
+    setLastSavedPath(null);
+    setActiveView('overview');
+    showNotice({
+      kind: 'info',
+      message: 'プロジェクトを閉じました。',
+    });
+  }, [showNotice]);
+
+  const sidebarItems = useMemo<readonly SidebarItem[]>(() => {
+    const baseItems: SidebarItem[] = [
+      {
+        icon: <OverviewIcon />,
+        id: 'overview',
+        label: '概要',
+      },
+      {
+        badge:
+          stats && stats.totalCount > 0
+            ? formatPercentage(stats.translatedCount, stats.totalCount)
+            : undefined,
+        disabled: !project,
+        icon: <TranslateIcon />,
+        id: 'translate',
+        label: '翻訳エディタ',
+      },
+      {
+        badge: project
+          ? formatNumber(project.inspectorRecords.length)
+          : undefined,
+        disabled: !project,
+        icon: <InspectorIcon />,
+        id: 'inspector',
+        label: 'インスペクタ',
+      },
+      {
+        badge: project ? formatNumber(project.mods.length) : undefined,
+        disabled: !project,
+        icon: <ModsIcon />,
+        id: 'mods',
+        label: 'mod情報',
+      },
+    ];
+
+    return baseItems;
+  }, [project, stats]);
+
+  const handleSelectView = useCallback((view: ViewId) => {
+    setActiveView(view);
+  }, []);
+
+  const renderActiveView = () => {
+    if (!project || !stats) {
+      return (
+        <div className="view-empty">
+          <header className="view-header">
+            <div>
+              <p className="eyebrow">ようこそ</p>
+              <h1 className="view-title">Kenshi多機能modツール</h1>
+              <p className="view-subtitle">
+                翻訳・インスペクト・メタ情報確認を一体化したデスクトップアプリ。
+              </p>
+            </div>
+          </header>
+          <LoaderPanel
+            isBusy={isBusy}
+            isDragging={isDragging}
+            onDrop={handleDrop}
+            onImportJson={handleImportJson}
+            onPickFiles={() => {
+              void handlePickModFiles();
+            }}
+            onPickFolders={() => {
+              void handlePickModFolders();
+            }}
+            setDragging={setIsDragging}
+          />
+        </div>
+      );
+    }
+
+    switch (activeView) {
+      case 'overview':
+        return (
+          <OverviewView
+            onJumpToEditor={() => setActiveView('translate')}
+            onJumpToInspector={() => setActiveView('inspector')}
+            onJumpToMods={() => setActiveView('mods')}
+            project={project}
+            stats={stats}
+          />
+        );
+      case 'translate':
+        return (
+          <TranslationView
+            onDialogChange={updateDialogTranslation}
+            onEntityChange={updateEntityTranslation}
+            onReplaceAll={replaceAllInProject}
+            project={project}
+          />
+        );
+      case 'inspector':
+        return <InspectorView records={project.inspectorRecords} />;
+      case 'mods':
+        return (
+          <ModsView mods={project.mods} onRevealFile={handleRevealFile} />
+        );
+      default:
+        return null;
+    }
+  };
 
   return (
     <div className="app-shell">
-      <header className="hero-panel">
-        <div className="hero-copy">
-          <p className="eyebrow">Windows用デスクトップアプリ</p>
-          <h1>Kenshiツール</h1>
-          <p className="hero-text">
-            mod を読み込み、手動翻訳を編集して翻訳用 .mod を書き出せます。
-          </p>
-        </div>
-        <div className="hero-meta">
-          <div className="meta-card">
-            <span className="meta-label">読み込み</span>
-            <strong>{stats?.recordCount ?? 0} レコード</strong>
+      <Sidebar
+        activeId={activeView}
+        items={sidebarItems}
+        onSelect={handleSelectView}
+      />
+      <div className="app-main">
+        <header className="topbar">
+          <div className="topbar-info">
+            {project ? (
+              <>
+                <span className="topbar-project">
+                  <strong>{project.sourceModName}</strong>
+                  <span className="topbar-chip">
+                    {formatNumber(project.mods.length)} mod
+                  </span>
+                  {stats ? (
+                    <span className="topbar-chip">
+                      {formatPercentage(stats.translatedCount, stats.totalCount)}
+                      進捗
+                    </span>
+                  ) : null}
+                </span>
+                <button
+                  className="ghost-button"
+                  onClick={handleCloseProject}
+                  type="button"
+                >
+                  <CloseIcon height="14" width="14" />
+                  閉じる
+                </button>
+              </>
+            ) : (
+              <span className="topbar-hint">
+                modを読み込むとメニューが有効になります。
+              </span>
+            )}
           </div>
-          <div className="meta-card">
-            <span className="meta-label">編集対象</span>
-            <strong>{stats?.totalCount ?? 0} 項目</strong>
-          </div>
-          <div className="meta-card">
-            <span className="meta-label">翻訳入力済み</span>
-            <strong>{stats?.translatedCount ?? 0} 項目</strong>
-          </div>
-        </div>
-      </header>
-
-      <main className="content-grid">
-        <section className="panel stack-panel">
-          <div
-            className={cx('dropzone', {
-              'is-dragging': isDragging,
-              'is-loading': isLoadingProject || isPending,
-            })}
-            onDragEnter={() => setIsDragging(true)}
-            onDragLeave={() => setIsDragging(false)}
-            onDragOver={(event) => {
-              event.preventDefault();
-            }}
-            onDrop={handleDrop}
-          >
-            <p className="dropzone-title">modファイルをここにドロップ</p>
-            <p className="dropzone-text">
-              .mod ファイルのドラッグ&ドロップに対応しています。
-              フォルダ読み込みは下のボタンから選択してください。
-            </p>
-          </div>
-
-          <div className="action-row">
+          <div className="topbar-actions">
             <button
-              className="primary-button"
-              disabled={isLoadingProject || isSaving}
+              className="ghost-button"
+              disabled={isBusy}
               onClick={() => {
                 void handlePickModFiles();
               }}
               type="button"
             >
-              modファイルを選択
+              <FileIcon height="14" width="14" />
+              modを追加
             </button>
             <button
-              className="secondary-button"
-              disabled={isLoadingProject || isSaving}
+              className="ghost-button"
+              disabled={isBusy}
               onClick={() => {
                 void handlePickModFolders();
               }}
               type="button"
             >
-              フォルダを選択
+              <FolderIcon height="14" width="14" />
+              フォルダ追加
+            </button>
+            <button
+              className="ghost-button"
+              disabled={isBusy}
+              onClick={() => {
+                void handleImportJson();
+              }}
+              type="button"
+            >
+              <UploadIcon height="14" width="14" />
+              プロジェクト読込
+            </button>
+            <button
+              className="ghost-button"
+              disabled={!project || isBusy}
+              onClick={() => {
+                void handleExportJson();
+              }}
+              type="button"
+            >
+              <DownloadIcon height="14" width="14" />
+              プロジェクト保存
             </button>
             <button
               className="accent-button"
-              disabled={
-                !project ||
-                !hasEditableContent ||
-                isLoadingProject ||
-                isSaving
-              }
+              disabled={!project || isBusy}
               onClick={() => {
                 void handleSave();
               }}
               type="button"
             >
-              {isSaving ? '保存中...' : '翻訳modを保存'}
+              <SaveIcon height="14" width="14" />
+              {isSaving ? '保存中…' : '翻訳modを書き出し'}
             </button>
           </div>
+        </header>
 
-          {notice ? (
-            <div className={cx('notice', noticeClassNames[notice.kind])}>
-              {notice.message}
-            </div>
-          ) : null}
-
-          {lastSavedPath ? (
-            <div className="saved-box">
-              <p className="saved-label">直近の保存先</p>
-              <p className="saved-path">{lastSavedPath}</p>
-              <button
-                className="secondary-button"
-                onClick={() => {
-                  void window.electronApi.revealFileInFolder(lastSavedPath);
-                }}
-                type="button"
-              >
-                保存先を開く
-              </button>
-            </div>
-          ) : null}
-        </section>
-
-        <section className="panel info-panel">
-          <h2>読み込み中のmod</h2>
-          {project ? (
-            <div className="tag-list">
-              {project.dependencies.map((dependency) => (
-                <span
-                  className="tag"
-                  key={dependency}
-                >
-                  {dependency}.mod
-                </span>
-              ))}
-            </div>
-          ) : (
-            <p className="subtle-text">
-              まだ mod は読み込まれていません。
-            </p>
-          )}
-
-          <h2>内訳</h2>
-          <div className="metric-grid">
-            <div className="metric-card">
-              <span>ダイアログ</span>
-              <strong>{stats?.dialogCount ?? 0}</strong>
-            </div>
-            <div className="metric-card">
-              <span>名称</span>
-              <strong>{stats?.nameCount ?? 0}</strong>
-            </div>
-            <div className="metric-card">
-              <span>説明文</span>
-              <strong>{stats?.descriptionCount ?? 0}</strong>
-            </div>
-          </div>
-        </section>
-
-        <section className="panel editor-panel">
-          <div className="editor-toolbar">
-            <input
-              className="search-input"
-              onChange={(event) => {
-                setSearchText(event.target.value);
+        {notice ? (
+          <div className="topbar-notice">
+            <Notice
+              notice={notice}
+              onDismiss={() => {
+                setNotice(null);
               }}
-              placeholder="stringID / 原文 / 翻訳 / textID を検索"
-              type="search"
-              value={searchText}
             />
-            <div className="segment-row">
-              {(Object.keys(sectionLabels) as SectionFilter[]).map(
-                (section) => (
-                  <button
-                    className={cx('segment-button', {
-                      'is-active': sectionFilter === section,
-                    })}
-                    key={section}
-                    onClick={() => {
-                      setSectionFilter(section);
-                    }}
-                    type="button"
-                  >
-                    {sectionLabels[section]}
-                  </button>
-                ),
-              )}
-            </div>
           </div>
+        ) : null}
 
-          {project ? (
-            editorRows.length > 0 ? (
-              <div
-                className="editor-list"
-                ref={listRef}
-              >
-                <div
-                  className="editor-list-inner"
-                  style={{
-                    height: `${virtualizer.getTotalSize()}px`,
-                  }}
-                >
-                  {virtualizer.getVirtualItems().map((virtualItem) => {
-                    const row = editorRows[virtualItem.index];
-                    return (
-                      <article
-                        className={cx(
-                          'entry-card',
-                          `entry-${row.section}`,
-                        )}
-                        key={row.id}
-                        style={{
-                          transform: `translateY(${virtualItem.start}px)`,
-                        }}
-                      >
-                        <div className="entry-meta">
-                          <span className="entry-chip">
-                            {sectionLabels[row.section]}
-                          </span>
-                          <span className="entry-token">
-                            種別 {row.type}
-                          </span>
-                          <span className="entry-token">{row.stringId}</span>
-                          {row.textId.length > 0 ? (
-                            <span className="entry-token">
-                              {row.textId}
-                            </span>
-                          ) : null}
-                        </div>
-                        <h3>{row.title}</h3>
-                        <p className="entry-subtitle">{row.subtitle}</p>
-                        <div className="editor-columns">
-                          <label className="editor-pane">
-                            <span>原文</span>
-                            <textarea
-                              readOnly
-                              spellCheck={false}
-                              value={row.original}
-                            />
-                          </label>
-                          <label className="editor-pane">
-                            <span>翻訳</span>
-                            <textarea
-                              onChange={(event) => {
-                                if (row.section === 'dialog') {
-                                  updateDialogTranslation(
-                                    row.recordIndex,
-                                    row.itemIndex,
-                                    event.target.value,
-                                  );
-                                  return;
-                                }
+        {lastSavedPath ? (
+          <div className="topbar-saved">
+            <span className="topbar-saved-label">直近の保存先</span>
+            <span className="topbar-saved-path">{lastSavedPath}</span>
+            <button
+              className="ghost-button"
+              onClick={() => {
+                void window.electronApi.revealFileInFolder(lastSavedPath);
+              }}
+              type="button"
+            >
+              <OpenIcon height="14" width="14" />
+              フォルダを開く
+            </button>
+          </div>
+        ) : null}
 
-                                updateEntityTranslation(
-                                  row.recordIndex,
-                                  row.section,
-                                  event.target.value,
-                                );
-                              }}
-                              placeholder="ここに手動翻訳を入力"
-                              spellCheck={false}
-                              value={row.translation}
-                            />
-                          </label>
-                        </div>
-                      </article>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : (
-              <div className="empty-state">
-                条件に一致する項目がありません。
-              </div>
-            )
-          ) : (
-            <div className="empty-state">
-              mod を読み込むと、ここに手動翻訳用エディタが表示されます。
-            </div>
-          )}
-        </section>
-      </main>
+        <main className="app-content">{renderActiveView()}</main>
+      </div>
     </div>
   );
 };

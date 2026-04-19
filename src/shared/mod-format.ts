@@ -1,13 +1,13 @@
+import { getItemTypeDefinition } from './item-types.ts';
 import type {
   DialogRecord,
   DialogText,
+  InspectorRecord,
+  ModHeader,
   TranslationProject,
   TranslationRecord,
 } from './models.ts';
 
-const editableTypeCodes = new Set([
-  0, 1, 2, 3, 4, 7, 10, 13, 21, 46, 51, 62, 64, 76, 107, 111,
-]);
 const dialogTypeCode = 19;
 
 interface BinaryCursor {
@@ -43,7 +43,13 @@ interface ExportEntityRecord {
 
 type ExportRecord = ExportDialogRecord | ExportEntityRecord;
 
-const createBinaryWriter = (initialSize = 1024): BinaryWriter => {
+export interface ParsedMod {
+  header: ModHeader;
+  inspectorRecords: InspectorRecord[];
+  translationRecords: TranslationRecord[];
+}
+
+const createBinaryWriter = (initialSize = 4096): BinaryWriter => {
   const buffer = new ArrayBuffer(initialSize);
   return {
     buffer,
@@ -77,9 +83,9 @@ const readInt = (cursor: BinaryCursor) => {
   return value;
 };
 
-const readChar = (cursor: BinaryCursor) => {
-  const value = cursor.view.getInt8(cursor.position);
-  cursor.position += 1;
+const readUInt = (cursor: BinaryCursor) => {
+  const value = cursor.view.getUint32(cursor.position, true);
+  cursor.position += 4;
   return value;
 };
 
@@ -96,7 +102,7 @@ const readFloat = (cursor: BinaryCursor) => {
 };
 
 const readBoolean = (cursor: BinaryCursor) => {
-  const value = cursor.view.getInt8(cursor.position);
+  const value = cursor.view.getUint8(cursor.position);
   cursor.position += 1;
   return value;
 };
@@ -106,14 +112,25 @@ const textEncoder = new TextEncoder();
 
 const readString = (cursor: BinaryCursor) => {
   const length = readInt(cursor);
-  const bytes = new Uint8Array(length);
-
-  for (let index = 0; index < length; index += 1) {
-    bytes[index] = readUnsignedChar(cursor);
+  if (length <= 0) {
+    return '';
   }
+
+  const bytes = new Uint8Array(
+    cursor.view.buffer,
+    cursor.view.byteOffset + cursor.position,
+    length,
+  );
+  cursor.position += length;
 
   return textDecoder.decode(bytes);
 };
+
+const readCommaList = (cursor: BinaryCursor) =>
+  readString(cursor)
+    .split(',')
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0);
 
 const writeInt = (writer: BinaryWriter, value: number) => {
   ensureWriterCapacity(writer, writer.position + 4);
@@ -121,112 +138,104 @@ const writeInt = (writer: BinaryWriter, value: number) => {
   writer.position += 4;
 };
 
-const writeUnsignedChar = (writer: BinaryWriter, value: number) => {
-  ensureWriterCapacity(writer, writer.position + 1);
-  writer.view.setUint8(writer.position, value);
-  writer.position += 1;
-};
-
 const writeString = (writer: BinaryWriter, value: string) => {
   const encoded = textEncoder.encode(value);
   writeInt(writer, encoded.length);
 
-  for (const currentByte of encoded) {
-    writeUnsignedChar(writer, currentByte);
-  }
+  ensureWriterCapacity(writer, writer.position + encoded.length);
+  new Uint8Array(writer.buffer, writer.position, encoded.length).set(encoded);
+  writer.position += encoded.length;
 };
 
 const toArrayBuffer = (writer: BinaryWriter) =>
   writer.buffer.slice(0, writer.position);
 
 const skipBooleanBlock = (cursor: BinaryCursor) => {
-  let count = readInt(cursor);
-
-  while (count > 0) {
+  const count = readInt(cursor);
+  for (let index = 0; index < count; index += 1) {
     readString(cursor);
     readBoolean(cursor);
-    count -= 1;
   }
+  return count;
 };
 
 const skipFloatBlock = (cursor: BinaryCursor) => {
-  let count = readInt(cursor);
-
-  while (count > 0) {
+  const count = readInt(cursor);
+  for (let index = 0; index < count; index += 1) {
     readString(cursor);
     readFloat(cursor);
-    count -= 1;
   }
+  return count;
 };
 
-const skipLongBlock = (cursor: BinaryCursor) => {
-  let count = readInt(cursor);
-
-  while (count > 0) {
+const skipIntBlock = (cursor: BinaryCursor) => {
+  const count = readInt(cursor);
+  for (let index = 0; index < count; index += 1) {
     readString(cursor);
     readInt(cursor);
-    count -= 1;
   }
+  return count;
 };
 
 const skipVector3Block = (cursor: BinaryCursor) => {
-  let count = readInt(cursor);
-
-  while (count > 0) {
+  const count = readInt(cursor);
+  for (let index = 0; index < count; index += 1) {
     readString(cursor);
     readFloat(cursor);
     readFloat(cursor);
     readFloat(cursor);
-    count -= 1;
   }
+  return count;
 };
 
 const skipVector4Block = (cursor: BinaryCursor) => {
-  let count = readInt(cursor);
-
-  while (count > 0) {
+  const count = readInt(cursor);
+  for (let index = 0; index < count; index += 1) {
     readString(cursor);
     readFloat(cursor);
     readFloat(cursor);
     readFloat(cursor);
     readFloat(cursor);
-    count -= 1;
   }
+  return count;
 };
 
-const skipPathStringBlock = (cursor: BinaryCursor) => {
-  let count = readInt(cursor);
-
-  while (count > 0) {
+const skipFileBlock = (cursor: BinaryCursor) => {
+  const count = readInt(cursor);
+  for (let index = 0; index < count; index += 1) {
     readString(cursor);
     readString(cursor);
-    count -= 1;
   }
+  return count;
 };
 
-const skipExtraDataBlock = (cursor: BinaryCursor) => {
-  let count = readInt(cursor);
+interface ReferenceCounts {
+  categoryCount: number;
+  totalReferences: number;
+}
 
-  while (count > 0) {
+const skipReferenceCategories = (cursor: BinaryCursor): ReferenceCounts => {
+  const categoryCount = readInt(cursor);
+  let totalReferences = 0;
+
+  for (let index = 0; index < categoryCount; index += 1) {
     readString(cursor);
-    let nestedCount = readInt(cursor);
-
-    while (nestedCount > 0) {
+    const referenceCount = readInt(cursor);
+    totalReferences += referenceCount;
+    for (let innerIndex = 0; innerIndex < referenceCount; innerIndex += 1) {
       readString(cursor);
       readInt(cursor);
       readInt(cursor);
       readInt(cursor);
-      nestedCount -= 1;
     }
-
-    count -= 1;
   }
+
+  return { categoryCount, totalReferences };
 };
 
-const skipInstanceDataBlock = (cursor: BinaryCursor) => {
-  let count = readInt(cursor);
-
-  while (count > 0) {
+const skipInstanceBlock = (cursor: BinaryCursor) => {
+  const count = readInt(cursor);
+  for (let index = 0; index < count; index += 1) {
     readString(cursor);
     readString(cursor);
     readFloat(cursor);
@@ -237,123 +246,206 @@ const skipInstanceDataBlock = (cursor: BinaryCursor) => {
     readFloat(cursor);
     readFloat(cursor);
 
-    let nestedCount = readInt(cursor);
-    while (nestedCount > 0) {
+    const stateCount = readInt(cursor);
+    for (let innerIndex = 0; innerIndex < stateCount; innerIndex += 1) {
       readString(cursor);
-      nestedCount -= 1;
     }
-
-    count -= 1;
   }
+  return count;
 };
 
-const readHeader = (cursor: BinaryCursor) => {
+interface ParsedHeaderResult {
+  header: ModHeader;
+  recordCount: number;
+}
+
+const readHeaderAndCount = (cursor: BinaryCursor): ParsedHeaderResult => {
   const fileType = readInt(cursor);
 
   if (fileType === 16) {
+    const version = readInt(cursor);
+    const author = readString(cursor);
+    const description = readString(cursor);
+    const dependencies = readCommaList(cursor);
+    const references = readCommaList(cursor);
     readInt(cursor);
-    readString(cursor);
-    readString(cursor);
-    readString(cursor);
-    readString(cursor);
-    readInt(cursor);
-    return readInt(cursor);
+    const recordCount = readInt(cursor);
+
+    return {
+      header: {
+        author,
+        dependencies,
+        description,
+        fileType,
+        references,
+        version,
+      },
+      recordCount,
+    };
   }
 
   if (fileType === 17) {
     const headerLength = readInt(cursor);
-    readInt(cursor);
-    readString(cursor);
-    readString(cursor);
-    readString(cursor);
-    readString(cursor);
-    readInt(cursor);
-    readInt(cursor);
-    readChar(cursor);
+    const headerEnd = cursor.position + headerLength;
 
-    if (headerLength > 0) {
-      cursor.position = headerLength + 8;
+    const version = readInt(cursor);
+    const author = readString(cursor);
+    const description = readString(cursor);
+    const dependencies = readCommaList(cursor);
+    const references = readCommaList(cursor);
+
+    if (cursor.position < headerEnd) {
+      readUInt(cursor);
+      readUInt(cursor);
+
+      const mergeEntryCount = readUnsignedChar(cursor);
+      for (let index = 0; index < mergeEntryCount; index += 1) {
+        readString(cursor);
+        readUInt(cursor);
+        readUInt(cursor);
+      }
     }
 
+    if (cursor.position < headerEnd) {
+      const deleteRequestCount = readUnsignedChar(cursor);
+      for (let index = 0; index < deleteRequestCount; index += 1) {
+        readString(cursor);
+        readUInt(cursor);
+        const itemCount = readInt(cursor);
+        for (let innerIndex = 0; innerIndex < itemCount; innerIndex += 1) {
+          readString(cursor);
+        }
+      }
+    }
+
+    cursor.position = headerEnd;
+
     readInt(cursor);
-    return readInt(cursor);
+    const recordCount = readInt(cursor);
+
+    return {
+      header: {
+        author,
+        dependencies,
+        description,
+        fileType,
+        references,
+        version,
+      },
+      recordCount,
+    };
   }
 
-  throw new Error('未対応のmod形式です。');
+  throw new Error(`未対応のmod形式です(fileType=${fileType})。`);
 };
 
-export const parseModBuffer = (buffer: ArrayBuffer) => {
+export const parseMod = (
+  data: ArrayBuffer | Uint8Array,
+  modName: string,
+  uidPrefix: string = modName,
+): ParsedMod => {
   const cursor: BinaryCursor = {
     position: 0,
-    view: new DataView(buffer),
+    view:
+      data instanceof Uint8Array
+        ? new DataView(data.buffer, data.byteOffset, data.byteLength)
+        : new DataView(data),
   };
-  let recordCount = readHeader(cursor);
-  const parsedRecords: TranslationRecord[] = [];
 
-  while (recordCount > 0) {
+  const { header, recordCount } = readHeaderAndCount(cursor);
+
+  const translationRecords: TranslationRecord[] = [];
+  const inspectorRecords: InspectorRecord[] = [];
+
+  for (let recordIndex = 0; recordIndex < recordCount; recordIndex += 1) {
     readInt(cursor);
     const type = readInt(cursor);
     readInt(cursor);
     const name = readString(cursor);
     const stringId = readString(cursor);
     const dataType = readInt(cursor);
+
     const baseRecord = {
       name,
       stringId,
       type,
     };
-    let shouldIncludeRecord = false;
-    const canEditNameOrDescription =
-      editableTypeCodes.has(type) && (dataType & 0b11) !== 1;
+
+    const typeDefinition = getItemTypeDefinition(type);
+    const isTypeTranslatable = typeDefinition?.translatable ?? false;
+    const isDialogType = type === dialogTypeCode;
+    const canEditName =
+      isTypeTranslatable && !isDialogType && (dataType & 0b11) !== 1;
+
     let description = '';
     const dialogTexts: DialogText[] = [];
 
-    if (canEditNameOrDescription) {
-      shouldIncludeRecord = true;
-    }
+    const boolCount = skipBooleanBlock(cursor);
+    const floatCount = skipFloatBlock(cursor);
+    const intCount = skipIntBlock(cursor);
+    const vector3Count = skipVector3Block(cursor);
+    const vector4Count = skipVector4Block(cursor);
 
-    skipBooleanBlock(cursor);
-    skipFloatBlock(cursor);
-    skipLongBlock(cursor);
-    skipVector3Block(cursor);
-    skipVector4Block(cursor);
-
+    const strings: Array<{ key: string; value: string }> = [];
     let stringCount = readInt(cursor);
+    const totalStrings = stringCount;
+
     while (stringCount > 0) {
       const key = readString(cursor);
       const value = readString(cursor);
+      strings.push({ key, value });
 
-      if (key === 'description' && editableTypeCodes.has(type)) {
+      if (key === 'description' && isTypeTranslatable && !isDialogType) {
         description = value;
-        shouldIncludeRecord = true;
       }
 
-      if (type === dialogTypeCode && key.startsWith('text')) {
+      if (isDialogType && key.startsWith('text')) {
         dialogTexts.push({
           original: value,
           textId: key,
           translation: '',
         });
-        shouldIncludeRecord = true;
       }
 
       stringCount -= 1;
     }
 
-    skipPathStringBlock(cursor);
-    skipExtraDataBlock(cursor);
-    skipInstanceDataBlock(cursor);
+    const fileCount = skipFileBlock(cursor);
+    const referenceCounts = skipReferenceCategories(cursor);
+    const instanceCount = skipInstanceBlock(cursor);
 
-    if (type === dialogTypeCode) {
-      if (shouldIncludeRecord) {
-        parsedRecords.push({
-          ...baseRecord,
-          kind: 'dialog',
-          texts: dialogTexts,
-        } satisfies DialogRecord);
-      }
-    } else if (shouldIncludeRecord) {
-      parsedRecords.push({
+    inspectorRecords.push({
+      counts: {
+        bools: boolCount,
+        files: fileCount,
+        floats: floatCount,
+        instances: instanceCount,
+        ints: intCount,
+        referenceCategories: referenceCounts.categoryCount,
+        references: referenceCounts.totalReferences,
+        strings: totalStrings,
+        vector3s: vector3Count,
+        vector4s: vector4Count,
+      },
+      modName,
+      name,
+      stringId,
+      strings,
+      type,
+      uid: `${uidPrefix}:${recordIndex}`,
+    });
+
+    if (isDialogType && dialogTexts.length > 0) {
+      translationRecords.push({
+        ...baseRecord,
+        kind: 'dialog',
+        texts: dialogTexts,
+      } satisfies DialogRecord);
+      continue;
+    }
+
+    if (canEditName || (isTypeTranslatable && description.length > 0)) {
+      translationRecords.push({
         ...baseRecord,
         description,
         descriptionTranslation: '',
@@ -361,11 +453,13 @@ export const parseModBuffer = (buffer: ArrayBuffer) => {
         nameTranslation: '',
       });
     }
-
-    recordCount -= 1;
   }
 
-  return parsedRecords;
+  return {
+    header,
+    inspectorRecords,
+    translationRecords,
+  };
 };
 
 export const createTranslationModBuffer = (

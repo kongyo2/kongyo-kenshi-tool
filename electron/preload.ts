@@ -2,6 +2,10 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { ElectronApi } from '../src/shared/ipc.ts';
 
 const electronApi = {
+  exportTranslationJson: async (input) =>
+    ipcRenderer.invoke('translation:export-json', input),
+  importTranslationJson: async () =>
+    ipcRenderer.invoke('translation:import-json'),
   loadMods: async (input) => ipcRenderer.invoke('mods:load', input),
   pickModFiles: async () => ipcRenderer.invoke('dialog:pick-mod-files'),
   pickModFolders: async () => ipcRenderer.invoke('dialog:pick-mod-folders'),
@@ -12,4 +16,3 @@ const electronApi = {
 } satisfies ElectronApi;
 
 contextBridge.exposeInMainWorld('electronApi', electronApi);
-
