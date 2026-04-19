@@ -29,6 +29,21 @@ export const exportTranslationJsonResponseSchema = z.object({
   filePath: z.string().nullable(),
 });
 
+export const exportModMarkdownRequestSchema = z.object({
+  project: translationProjectSchema,
+});
+
+export const exportModMarkdownResponseSchema = z.object({
+  canceled: z.boolean(),
+  filePath: z.string().nullable(),
+});
+
+export type ExportModMarkdownRequest = z.infer<
+  typeof exportModMarkdownRequestSchema
+>;
+export type ExportModMarkdownResponse = z.infer<
+  typeof exportModMarkdownResponseSchema
+>;
 export type ExportTranslationJsonRequest = z.infer<
   typeof exportTranslationJsonRequestSchema
 >;
@@ -47,6 +62,9 @@ export type SaveTranslationModResponse = z.infer<
 >;
 
 export interface ElectronApi {
+  exportModMarkdown: (
+    input: ExportModMarkdownRequest,
+  ) => Promise<ExportModMarkdownResponse>;
   exportTranslationJson: (
     input: ExportTranslationJsonRequest,
   ) => Promise<ExportTranslationJsonResponse>;

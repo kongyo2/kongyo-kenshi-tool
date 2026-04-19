@@ -175,6 +175,36 @@ const App = () => {
     }
   }, [project, showNotice]);
 
+  const handleExportMarkdown = useCallback(async () => {
+    if (!project) {
+      return;
+    }
+
+    try {
+      const result = await window.electronApi.exportModMarkdown({
+        project,
+      });
+
+      if (result.canceled) {
+        showNotice({
+          kind: 'info',
+          message: 'Markdown書き出しをキャンセルしました。',
+        });
+        return;
+      }
+
+      showNotice({
+        kind: 'success',
+        message: `modデータをMarkdownで保存しました: ${result.filePath}`,
+      });
+    } catch (error) {
+      showNotice({
+        kind: 'error',
+        message: `Markdown書き出しに失敗しました: ${getErrorMessage(error)}`,
+      });
+    }
+  }, [project, showNotice]);
+
   const handleExportJson = useCallback(async () => {
     if (!project) {
       return;
@@ -601,6 +631,17 @@ const App = () => {
             >
               <DownloadIcon height="14" width="14" />
               プロジェクト保存
+            </button>
+            <button
+              className="ghost-button"
+              disabled={!project || isBusy}
+              onClick={() => {
+                void handleExportMarkdown();
+              }}
+              type="button"
+            >
+              <DownloadIcon height="14" width="14" />
+              Markdown書き出し
             </button>
             <button
               className="accent-button"
