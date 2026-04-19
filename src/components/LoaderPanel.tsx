@@ -8,7 +8,6 @@ interface LoaderPanelProps {
   onDrop: DragEventHandler<HTMLDivElement>;
   onPickFiles: () => void;
   onPickFolders: () => void;
-  onImportJson: () => void;
   setDragging: (value: boolean) => void;
 }
 
@@ -18,14 +17,13 @@ export const LoaderPanel = ({
   onDrop,
   onPickFiles,
   onPickFolders,
-  onImportJson,
   setDragging,
 }: LoaderPanelProps) => (
   <section className="loader-panel">
     <div
       className={cx('dropzone', {
-        'is-dragging': isDragging,
         'is-busy': isBusy,
+        'is-dragging': isDragging,
       })}
       onDragEnter={() => setDragging(true)}
       onDragLeave={() => setDragging(false)}
@@ -37,10 +35,10 @@ export const LoaderPanel = ({
       <div className="dropzone-icon" aria-hidden="true">
         <UploadIcon height="32" width="32" />
       </div>
-      <h2 className="dropzone-title">modファイルをここにドロップ</h2>
+      <h2 className="dropzone-title">Kenshi modを読み込む</h2>
       <p className="dropzone-text">
-        複数の <code>.mod</code>{' '}
-        ファイルや Steam Workshop のサブフォルダをまとめて読み込めます。
+        複数の <code>.mod</code> ファイルや Workshop 配下のサブフォルダを解析し、
+        LLM に読ませるための Markdown を生成できます。
       </p>
       <div className="dropzone-actions">
         <button
@@ -61,25 +59,17 @@ export const LoaderPanel = ({
           <FolderIcon height="16" width="16" />
           フォルダを選択
         </button>
-        <button
-          className="ghost-button"
-          disabled={isBusy}
-          onClick={onImportJson}
-          type="button"
-        >
-          翻訳プロジェクトから再開
-        </button>
       </div>
     </div>
     <ul className="loader-tips">
-      <li>ドラッグ&ドロップはファイルのみ対応。フォルダはボタンから選択してください。</li>
+      <li>ドラッグ&ドロップはファイルのみ対応です。フォルダはボタンから選択してください。</li>
       <li>
-        <strong>概要</strong> では翻訳の進捗、<strong>エディタ</strong>{' '}
-        では手動翻訳、<strong>インスペクタ</strong>{' '}
-        ではmod内の全レコードを確認できます。
+        読み込み後は <strong>概要</strong> で Markdown 出力の対象と件数を確認し、
+        <strong>インスペクタ</strong> で全レコードの文字列を追えます。
       </li>
       <li>
-        OpenConstructionSet と同じ fileType 16/17 を解析し、128種類のItemTypeに対応しています。
+        出力される Markdown には mod ヘッダ、依存関係、カテゴリ内訳、全 string
+        フィールドを持つレコード、対話・説明文の抽出結果が含まれます。
       </li>
     </ul>
   </section>

@@ -1,11 +1,7 @@
 import cx from 'clsx';
 import type { ReactNode } from 'react';
 
-export type ViewId =
-  | 'inspector'
-  | 'mods'
-  | 'overview'
-  | 'translate';
+export type ViewId = 'inspector' | 'mods' | 'overview';
 
 export interface SidebarItem {
   badge?: string;
@@ -27,7 +23,7 @@ export const Sidebar = ({ activeId, items, onSelect }: SidebarProps) => (
       <div className="sidebar-brand-mark">K</div>
       <div className="sidebar-brand-text">
         <span className="sidebar-brand-title">Kenshiツール</span>
-        <span className="sidebar-brand-subtitle">多機能mod支援</span>
+        <span className="sidebar-brand-subtitle">LLM向けmd生成</span>
       </div>
     </div>
     <nav className="sidebar-nav">

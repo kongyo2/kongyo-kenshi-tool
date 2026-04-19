@@ -5,24 +5,12 @@ import { fileURLToPath } from 'node:url';
 import {
   exportModMarkdownRequestSchema,
   exportModMarkdownResponseSchema,
-  exportTranslationJsonRequestSchema,
-  exportTranslationJsonResponseSchema,
-  importTranslationJsonResponseSchema,
   loadModsRequestSchema,
-  saveTranslationModRequestSchema,
-  saveTranslationModResponseSchema,
   type LoadModsRequest,
 } from '../src/shared/ipc.ts';
-import {
-  createTranslationModBuffer,
-  parseMod,
-} from '../src/shared/mod-format.ts';
+import { parseMod } from '../src/shared/mod-format.ts';
 import { renderProjectMarkdown } from '../src/shared/mod-markdown.ts';
-import type {
-  InspectorRecord,
-  LoadedMod,
-  TranslationRecord,
-} from '../src/shared/models.ts';
+import type { InspectorRecord, LoadedMod, TextRecord } from '../src/shared/models.ts';
 
 const electronRoot = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.resolve(electronRoot, '..');
@@ -125,8 +113,9 @@ const parseProject = async (input: LoadModsRequest) => {
     throw new Error('modファイルが見つかりませんでした。');
   }
 
-  const dependencies: string[] = [];
-  const records: TranslationRecord[] = [];
+  const declaredDependencies: string[] = [];
+  const loadedModNames: string[] = [];
+  const textRecords: TextRecord[] = [];
   const inspectorRecords: InspectorRecord[] = [];
   const mods: LoadedMod[] = [];
 
@@ -135,8 +124,9 @@ const parseProject = async (input: LoadModsRequest) => {
     const modName = path.basename(modPath, '.mod');
     const parsed = parseMod(fileBuffer, modName, modPath);
 
-    dependencies.push(modName);
-    records.push(...parsed.translationRecords);
+    loadedModNames.push(modName);
+    declaredDependencies.push(...parsed.header.dependencies);
+    textRecords.push(...parsed.textRecords);
     inspectorRecords.push(...parsed.inspectorRecords);
     mods.push({
       fileName: path.basename(modPath),
@@ -146,14 +136,14 @@ const parseProject = async (input: LoadModsRequest) => {
     });
   }
 
-  const uniqueDependencies = uniquePreserveOrder(dependencies);
+  const uniqueDependencies = uniquePreserveOrder(declaredDependencies);
 
   return {
     dependencies: uniqueDependencies,
     inspectorRecords,
     mods,
-    records,
-    sourceModName: uniqueDependencies[0] ?? 'unknown',
+    sourceModName: loadedModNames[0] ?? 'unknown',
+    textRecords,
   };
 };
 
@@ -186,74 +176,6 @@ const registerIpc = () => {
     const input = loadModsRequestSchema.parse(rawInput);
     return parseProject(input);
   });
-
-  ipcMain.handle('mods:save-translation-mod', async (_event, rawInput) => {
-    const input = saveTranslationModRequestSchema.parse(rawInput);
-    const defaultPath = path.join(
-      app.getPath('downloads'),
-      `${input.project.sourceModName}_translate.mod`,
-    );
-    const dialogResult = await dialog.showSaveDialog({
-      defaultPath,
-      filters: [
-        {
-          extensions: ['mod'],
-          name: '翻訳modファイル',
-        },
-      ],
-      title: '翻訳modの保存先を選択',
-    });
-
-    if (dialogResult.canceled || !dialogResult.filePath) {
-      return saveTranslationModResponseSchema.parse({
-        canceled: true,
-        filePath: null,
-      });
-    }
-
-    const buffer = createTranslationModBuffer(input.project);
-    await writeFile(dialogResult.filePath, Buffer.from(buffer));
-
-    return saveTranslationModResponseSchema.parse({
-      canceled: false,
-      filePath: dialogResult.filePath,
-    });
-  });
-
-  ipcMain.handle(
-    'translation:export-json',
-    async (_event, rawInput) => {
-      const input = exportTranslationJsonRequestSchema.parse(rawInput);
-      const defaultPath = path.join(
-        app.getPath('downloads'),
-        input.fileName,
-      );
-      const dialogResult = await dialog.showSaveDialog({
-        defaultPath,
-        filters: [
-          {
-            extensions: ['json'],
-            name: '翻訳プロジェクト',
-          },
-        ],
-        title: '翻訳プロジェクトをエクスポート',
-      });
-
-      if (dialogResult.canceled || !dialogResult.filePath) {
-        return exportTranslationJsonResponseSchema.parse({
-          canceled: true,
-          filePath: null,
-        });
-      }
-
-      await writeFile(dialogResult.filePath, input.payload, 'utf-8');
-
-      return exportTranslationJsonResponseSchema.parse({
-        canceled: false,
-        filePath: dialogResult.filePath,
-      });
-    },
-  );
 
   ipcMain.handle('mods:export-markdown', async (_event, rawInput) => {
     const input = exportModMarkdownRequestSchema.parse(rawInput);
@@ -288,39 +210,8 @@ const registerIpc = () => {
     });
   });
 
-  ipcMain.handle('translation:import-json', async () => {
-    const dialogResult = await dialog.showOpenDialog({
-      filters: [
-        {
-          extensions: ['json'],
-          name: '翻訳プロジェクト',
-        },
-      ],
-      properties: ['openFile'],
-      title: '翻訳プロジェクトをインポート',
-    });
-
-    if (
-      dialogResult.canceled ||
-      dialogResult.filePaths.length === 0
-    ) {
-      return importTranslationJsonResponseSchema.parse({
-        canceled: true,
-        payload: null,
-      });
-    }
-
-    const payload = await readFile(dialogResult.filePaths[0], 'utf-8');
-
-    return importTranslationJsonResponseSchema.parse({
-      canceled: false,
-      payload,
-    });
-  });
-
   ipcMain.handle('shell:show-item-in-folder', async (_event, filePath) => {
-    const filePathValue =
-      typeof filePath === 'string' ? filePath : '';
+    const filePathValue = typeof filePath === 'string' ? filePath : '';
     if (filePathValue.length > 0) {
       shell.showItemInFolder(filePathValue);
     }
@@ -338,10 +229,6 @@ process.on('message', (message) => {
 });
 
 app.whenReady().then(async () => {
-  if (process.platform === 'win32') {
-    app.setAppUserModelId('jp.prett.kongyo.kenshi.tool');
-  }
-
   Menu.setApplicationMenu(null);
   registerIpc();
   await createWindow();

@@ -10,10 +10,26 @@ import type {
   EntityRecord,
   InspectorRecord,
   LoadedMod,
-  TranslationProject,
+  ModProject,
 } from './models.ts';
 
 const formatNumber = (value: number) => value.toLocaleString('en-US');
+
+const uniquePreserveOrder = (items: readonly string[]) => {
+  const result: string[] = [];
+  const visited = new Set<string>();
+
+  for (const item of items) {
+    if (visited.has(item)) {
+      continue;
+    }
+
+    visited.add(item);
+    result.push(item);
+  }
+
+  return result;
+};
 
 const escapeTableCell = (value: string) =>
   value
@@ -33,6 +49,14 @@ const formatMultiline = (value: string) => {
 
 const pluralSuffix = (label: string, count: number) =>
   `${formatNumber(count)} ${label}${count === 1 ? '' : 's'}`;
+
+const collectDeclaredDependencies = (mods: readonly LoadedMod[]) =>
+  uniquePreserveOrder(mods.flatMap((mod) => mod.header.dependencies));
+
+const collectDeclaredReferences = (mods: readonly LoadedMod[]) =>
+  uniquePreserveOrder(mods.flatMap((mod) => mod.header.references));
+
+const normalizeModName = (value: string) => value.replace(/\.mod$/i, '');
 
 const buildRecordAnchor = (uid: string, sequence: number) => {
   const asciiSlug = uid
@@ -61,81 +85,110 @@ const countTypes = (records: readonly InspectorRecord[]) => {
   return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
 };
 
-const renderHeader = (project: TranslationProject) => {
+const renderHeader = (project: ModProject) => {
   const totalRecords = project.inspectorRecords.length;
+  const stringBearingRecordCount = project.inspectorRecords.filter(
+    (record) => record.strings.length > 0,
+  ).length;
   const totalStrings = project.inspectorRecords.reduce(
     (sum, record) => sum + record.strings.length,
     0,
   );
-  const totalTranslationRecords = project.records.length;
+  const totalTextRecords = project.textRecords.length;
+  const dialogLineCount = project.textRecords.reduce(
+    (sum, record) =>
+      record.kind === 'dialog' ? sum + record.texts.length : sum,
+    0,
+  );
 
   const lines: string[] = [];
-  lines.push('# Kenshi Mod Data Export');
+  lines.push('# Kenshi Mod Markdown Export');
   lines.push('');
   lines.push(
-    'This file is a merged representation of all loaded Kenshi mod data,',
+    'This file is a merged Markdown dump of all loaded Kenshi `.mod` files,',
   );
   lines.push(
-    'formatted as Markdown for ingestion by LLMs. It is structured like',
+    'formatted for human review and LLM ingestion.',
   );
-  lines.push(
-    '[repomix](https://github.com/yamadashy/repomix) output but for `.mod`',
-  );
-  lines.push('files parsed via the OpenConstructionSet binary format.');
   lines.push('');
   lines.push('## File Summary');
   lines.push('');
   lines.push('### Purpose');
   lines.push(
-    'Provide a complete, human and LLM readable dump of every record,',
+    'Provide a complete and prompt-friendly snapshot of the selected mods,',
   );
-  lines.push('string field, dependency and meta information contained in');
-  lines.push('the selected mods.');
+  lines.push(
+    'including metadata, record inventory, every string field, and extracted',
+  );
+  lines.push('dialog or description-heavy records.');
   lines.push('');
   lines.push('### Usage Guidelines');
-  lines.push('- The `Mods` section lists each loaded `.mod` file and its header.');
   lines.push(
-    '- The `Records` section contains every inspector record with all',
+    '- Start with `Extracted Text Records` when reviewing lore, dialogue, or',
   );
-  lines.push('  string key/value pairs and counts for non-string fields.');
+  lines.push('  text that is likely to matter to an LLM task.');
   lines.push(
-    '- Record headings use the form `modName :: stringId` so they can be',
+    '- Use `String-bearing Records` when you need the full raw string payload and exact keys',
   );
-  lines.push('  referenced uniquely.');
-  lines.push('- Empty string values are shown as `(empty)`.');
-  lines.push('');
-  lines.push('### Notes');
+  lines.push('  from the source mod data.');
   lines.push(
-    '- Only string fields are dumped verbatim; booleans / floats / ints /',
+    '- Records with no string fields are omitted from the raw dump, while',
   );
+  lines.push('  their counts still contribute to the summary tables.');
   lines.push(
-    '  vectors / files / references / instances are summarised as counts',
+    '- Non-string fields are summarized as counts so the dump stays compact enough',
   );
-  lines.push('  since they rarely matter for translation / narrative review.');
-  lines.push('- Translation entries (dialog / entity) are included in a');
-  lines.push('  dedicated section when any translation progress exists.');
+  lines.push('  for prompt construction.');
   lines.push('');
   lines.push('### Metrics');
-  lines.push(
-    `- Source project: **${project.sourceModName}**`,
-  );
+  lines.push(`- Source project: **${project.sourceModName}**`);
   lines.push(`- Loaded mods: **${formatNumber(project.mods.length)}**`);
   lines.push(`- Total records: **${formatNumber(totalRecords)}**`);
   lines.push(
-    `- Total string fields: **${formatNumber(totalStrings)}**`,
+    `- String-bearing records: **${formatNumber(stringBearingRecordCount)}**`,
   );
+  lines.push(`- Total string fields: **${formatNumber(totalStrings)}**`);
+  lines.push(`- Extracted text records: **${formatNumber(totalTextRecords)}**`);
+  lines.push(`- Extracted dialog lines: **${formatNumber(dialogLineCount)}**`);
   lines.push(
-    `- Translation records: **${formatNumber(totalTranslationRecords)}**`,
-  );
-  lines.push(
-    `- Dependencies: **${formatNumber(project.dependencies.length)}**`,
+    `- Declared dependencies: **${formatNumber(collectDeclaredDependencies(project.mods).length)}**`,
   );
   lines.push('');
 
   return lines.join('\n');
 };
 
-const renderStructure = (project: TranslationProject) => {
+const renderNavigation = (project: ModProject) => {
+  const lines: string[] = [];
+  lines.push('## Navigation');
+  lines.push('');
+  lines.push('- [Directory Structure](#directory-structure)');
+
+  if (collectDeclaredDependencies(project.mods).length > 0) {
+    lines.push('- [Declared Dependencies](#declared-dependencies)');
+  }
+
+  if (collectDeclaredReferences(project.mods).length > 0) {
+    lines.push('- [Declared References](#declared-references)');
+  }
+
+  lines.push('- [Category Breakdown](#category-breakdown)');
+  lines.push('- [Item Type Breakdown](#item-type-breakdown)');
+  lines.push('- [Mods](#mods)');
+
+  if (project.textRecords.length > 0) {
+    lines.push('- [Extracted Text Records](#extracted-text-records)');
+  }
+
+  if (project.inspectorRecords.some((record) => record.strings.length > 0)) {
+    lines.push('- [String-bearing Records](#string-bearing-records)');
+  }
+
+  lines.push('');
+  return lines.join('\n');
+};
+
+const renderStructure = (project: ModProject) => {
   const lines: string[] = [];
   lines.push('## Directory Structure');
   lines.push('');
@@ -151,18 +204,29 @@ const renderStructure = (project: TranslationProject) => {
   return lines.join('\n');
 };
 
-const renderDependencies = (project: TranslationProject) => {
-  if (project.dependencies.length === 0) {
-    return '';
+const renderDependencies = (mods: readonly LoadedMod[]) => {
+  const dependencies = collectDeclaredDependencies(mods);
+  const references = collectDeclaredReferences(mods);
+  const lines: string[] = [];
+
+  if (dependencies.length > 0) {
+    lines.push('## Declared Dependencies');
+    lines.push('');
+    for (const dependency of dependencies) {
+      lines.push(`- ${dependency}`);
+    }
+    lines.push('');
   }
 
-  const lines: string[] = [];
-  lines.push('## Dependencies');
-  lines.push('');
-  for (const dependency of project.dependencies) {
-    lines.push(`- ${dependency}`);
+  if (references.length > 0) {
+    lines.push('## Declared References');
+    lines.push('');
+    for (const reference of references) {
+      lines.push(`- ${reference}`);
+    }
+    lines.push('');
   }
-  lines.push('');
+
   return lines.join('\n');
 };
 
@@ -282,27 +346,35 @@ const renderRecordCounts = (counts: InspectorRecord['counts']) => {
   return parts.join(', ');
 };
 
-const renderRecords = (records: readonly InspectorRecord[]) => {
+const renderStringBearingRecords = (records: readonly InspectorRecord[]) => {
+  const stringRecords = records.filter((record) => record.strings.length > 0);
+  const omittedCount = records.length - stringRecords.length;
   const lines: string[] = [];
-  lines.push('## Records');
+  lines.push('## String-bearing Records');
   lines.push('');
-  lines.push(`Total: ${formatNumber(records.length)} records`);
+  lines.push(
+    `Total: ${formatNumber(stringRecords.length)} records with string fields`,
+  );
+  lines.push(
+    `Omitted: ${formatNumber(omittedCount)} records with no string fields`,
+  );
   lines.push('');
 
   const byMod = new Map<string, InspectorRecord[]>();
-  for (const record of records) {
-    const existing = byMod.get(record.modName);
+  for (const record of stringRecords) {
+    const modName = normalizeModName(record.modName);
+    const existing = byMod.get(modName);
     if (existing) {
       existing.push(record);
     } else {
-      byMod.set(record.modName, [record]);
+      byMod.set(modName, [record]);
     }
   }
 
   let globalSequence = 0;
 
   for (const [modName, modRecords] of byMod) {
-    lines.push(`### Records · ${modName}`);
+    lines.push(`### String-bearing Records · ${modName}`);
     lines.push('');
     lines.push(
       `${pluralSuffix('record', modRecords.length)} from \`${modName}\`.`,
@@ -336,12 +408,6 @@ const renderRecords = (records: readonly InspectorRecord[]) => {
       lines.push(`| Field counts | ${renderRecordCounts(record.counts)} |`);
       lines.push('');
 
-      if (record.strings.length === 0) {
-        lines.push('_No string fields._');
-        lines.push('');
-        continue;
-      }
-
       lines.push('**String fields**');
       lines.push('');
       for (const entry of record.strings) {
@@ -356,80 +422,186 @@ const renderRecords = (records: readonly InspectorRecord[]) => {
   return lines.join('\n');
 };
 
-const renderTranslations = (project: TranslationProject) => {
-  const dialogRecords: DialogRecord[] = [];
-  const entityRecords: EntityRecord[] = [];
+const groupTextRecordsByMod = <T extends DialogRecord | EntityRecord>(
+  records: readonly T[],
+) => {
+  const groups = new Map<string, T[]>();
 
-  for (const record of project.records) {
-    if (record.kind === 'dialog') {
-      dialogRecords.push(record);
+  for (const record of records) {
+    const modName = normalizeModName(record.modName);
+    const existing = groups.get(modName);
+    if (existing) {
+      existing.push(record);
     } else {
-      entityRecords.push(record);
+      groups.set(modName, [record]);
     }
   }
 
-  if (dialogRecords.length === 0 && entityRecords.length === 0) {
+  return groups;
+};
+
+const isGenericDialogTitle = (value: string) =>
+  /^DIALOGUE_LINE(?:\d+)?$/i.test(value) || value === 'DIALOGUE_LINE';
+
+const renderDialogHeading = (record: DialogRecord) => {
+  const trimmedName = record.name.trim();
+
+  if (trimmedName.length === 0 || isGenericDialogTitle(trimmedName)) {
+    return record.stringId;
+  }
+
+  return `${trimmedName} · ${record.stringId}`;
+};
+
+const renderEntityHeading = (record: EntityRecord) => {
+  const trimmedName = record.name.trim();
+  return trimmedName.length > 0 ? trimmedName : record.stringId;
+};
+
+const renderExtractedTextRecords = (project: ModProject) => {
+  const dialogRecords: DialogRecord[] = [];
+  const describedEntityRecords: EntityRecord[] = [];
+  const nameOnlyEntityRecords: EntityRecord[] = [];
+
+  for (const record of project.textRecords) {
+    if (record.kind === 'dialog') {
+      dialogRecords.push(record);
+    } else {
+      if (record.description.length > 0) {
+        describedEntityRecords.push(record);
+      } else {
+        nameOnlyEntityRecords.push(record);
+      }
+    }
+  }
+
+  if (
+    dialogRecords.length === 0 &&
+    describedEntityRecords.length === 0 &&
+    nameOnlyEntityRecords.length === 0
+  ) {
     return '';
   }
 
+  const dialogByMod = groupTextRecordsByMod(dialogRecords);
+  const describedEntitiesByMod = groupTextRecordsByMod(describedEntityRecords);
+  const nameOnlyEntitiesByMod = groupTextRecordsByMod(nameOnlyEntityRecords);
   const lines: string[] = [];
-  lines.push('## Translation Records');
+  lines.push('## Extracted Text Records');
   lines.push('');
   lines.push(
-    `Dialog records: ${formatNumber(dialogRecords.length)} · Entity records: ${formatNumber(entityRecords.length)}`,
+    `Dialog records: ${formatNumber(dialogRecords.length)} · Described entities: ${formatNumber(describedEntityRecords.length)} · Name-only entities: ${formatNumber(nameOnlyEntityRecords.length)}`,
   );
   lines.push('');
 
-  if (entityRecords.length > 0) {
-    lines.push('### Entity Translations');
+  lines.push('### Mod Breakdown');
+  lines.push('');
+  lines.push('| Mod | Dialog records | Dialog lines | Described entities | Name-only entities |');
+  lines.push('| --- | ---: | ---: | ---: | ---: |');
+  for (const mod of project.mods) {
+    const modName = normalizeModName(mod.fileName);
+    const modDialogRecords = dialogByMod.get(modName) ?? [];
+    const modDescribedEntities = describedEntitiesByMod.get(modName) ?? [];
+    const modNameOnlyEntities = nameOnlyEntitiesByMod.get(modName) ?? [];
+    const dialogLineCount = modDialogRecords.reduce(
+      (sum, record) => sum + record.texts.length,
+      0,
+    );
+    lines.push(
+      `| ${escapeTableCell(modName)} | ${formatNumber(modDialogRecords.length)} | ${formatNumber(dialogLineCount)} | ${formatNumber(modDescribedEntities.length)} | ${formatNumber(modNameOnlyEntities.length)} |`,
+    );
+  }
+  lines.push('');
+
+  if (describedEntityRecords.length > 0) {
+    lines.push('### Entity Descriptions');
     lines.push('');
-    for (const record of entityRecords) {
-      lines.push(`#### ${escapeTableCell(record.name || '(unnamed)')}`);
+    for (const [modName, records] of describedEntitiesByMod) {
+      lines.push(`#### ${escapeTableCell(modName)}`);
       lines.push('');
-      lines.push(`- stringId: \`${escapeTableCell(record.stringId)}\``);
-      lines.push(
-        `- Type: ${record.type} · ${getItemTypeEnglishName(record.type)}`,
-      );
-      if (record.nameTranslation.length > 0) {
-        lines.push(`- Name translation: ${escapeTableCell(record.nameTranslation)}`);
+      lines.push(`${pluralSuffix('record', records.length)} with descriptions.`);
+      lines.push('');
+      for (const record of records) {
+        const heading = renderEntityHeading(record);
+        const metaParts: string[] = [];
+
+        if (heading !== record.stringId) {
+          metaParts.push(`ID: \`${escapeTableCell(record.stringId)}\``);
+        }
+
+        metaParts.push(
+          `Type: ${record.type} · ${getItemTypeEnglishName(record.type)}`,
+        );
+
+        lines.push(`##### ${escapeTableCell(heading)}`);
+        lines.push('');
+        lines.push(`- ${metaParts.join(' · ')}`);
+        lines.push('');
+        lines.push(formatMultiline(record.description));
+        lines.push('');
+      }
+    }
+  }
+
+  if (nameOnlyEntityRecords.length > 0) {
+    lines.push('### Name-only Entities');
+    lines.push('');
+    lines.push(
+      'These records were extracted because their names are text-relevant, but they do not carry a description field.',
+    );
+    lines.push('');
+    for (const [modName, records] of nameOnlyEntitiesByMod) {
+      lines.push(`#### ${escapeTableCell(modName)}`);
+      lines.push('');
+      lines.push('| Name | stringId | Type |');
+      lines.push('| --- | --- | --- |');
+      for (const record of records) {
+        lines.push(
+          `| ${escapeTableCell(record.name || '(unnamed)')} | \`${escapeTableCell(record.stringId)}\` | ${record.type} · ${getItemTypeEnglishName(record.type)} |`,
+        );
       }
       lines.push('');
-      lines.push('**Description (original)**');
-      lines.push('');
-      lines.push(formatMultiline(record.description));
-      lines.push('');
-      if (record.descriptionTranslation.length > 0) {
-        lines.push('**Description (translation)**');
-        lines.push('');
-        lines.push(formatMultiline(record.descriptionTranslation));
-        lines.push('');
-      }
     }
   }
 
   if (dialogRecords.length > 0) {
-    lines.push('### Dialog Translations');
+    lines.push('### Dialog Text');
     lines.push('');
-    for (const record of dialogRecords) {
-      lines.push(`#### ${escapeTableCell(record.name || '(unnamed)')}`);
+    for (const [modName, records] of dialogByMod) {
+      const lineCount = records.reduce((sum, record) => sum + record.texts.length, 0);
+      lines.push(`#### ${escapeTableCell(modName)}`);
       lines.push('');
-      lines.push(`- stringId: \`${escapeTableCell(record.stringId)}\``);
       lines.push(
-        `- Type: ${record.type} · ${getItemTypeEnglishName(record.type)}`,
+        `${pluralSuffix('record', records.length)} / ${pluralSuffix('line', lineCount)}.`,
       );
-      lines.push(`- Lines: ${formatNumber(record.texts.length)}`);
       lines.push('');
-      for (const text of record.texts) {
-        lines.push(`- \`${escapeTableCell(text.textId)}\``);
+      for (const record of records) {
+        const heading = renderDialogHeading(record);
+        const singleText = record.texts[0];
+
+        lines.push(`##### ${escapeTableCell(heading)}`);
         lines.push('');
-        lines.push('  **Original**');
-        lines.push('');
-        lines.push(formatMultiline(text.original));
-        lines.push('');
-        if (text.translation.length > 0) {
-          lines.push('  **Translation**');
+
+        if (record.texts.length === 1 && singleText) {
+          if (singleText.textId !== 'text0') {
+            lines.push(`- Field: \`${escapeTableCell(singleText.textId)}\``);
+            lines.push('');
+          }
+
+          lines.push(formatMultiline(singleText.original));
           lines.push('');
-          lines.push(formatMultiline(text.translation));
+          continue;
+        }
+
+        if (record.texts.length > 1) {
+          lines.push(`- Variations: ${formatNumber(record.texts.length)}`);
+          lines.push('');
+        }
+
+        for (const text of record.texts) {
+          lines.push(`- \`${escapeTableCell(text.textId)}\``);
+          lines.push('');
+          lines.push(formatMultiline(text.original));
           lines.push('');
         }
       }
@@ -439,18 +611,17 @@ const renderTranslations = (project: TranslationProject) => {
   return lines.join('\n');
 };
 
-export const renderProjectMarkdown = (
-  project: TranslationProject,
-): string => {
+export const renderProjectMarkdown = (project: ModProject): string => {
   const sections: string[] = [
     renderHeader(project),
+    renderNavigation(project),
     renderStructure(project),
-    renderDependencies(project),
+    renderDependencies(project.mods),
     renderCategoryBreakdown(project.inspectorRecords),
     renderTypeBreakdown(project.inspectorRecords),
     renderMods(project.mods),
-    renderRecords(project.inspectorRecords),
-    renderTranslations(project),
+    renderExtractedTextRecords(project),
+    renderStringBearingRecords(project.inspectorRecords),
   ];
 
   return sections.filter((section) => section.length > 0).join('\n') + '\n';

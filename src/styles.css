@@ -1088,48 +1088,6 @@ code,
   font-size: 0.88rem;
 }
 
-.editor-columns {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-
-.editor-pane {
-  display: grid;
-  gap: 6px;
-}
-
-.editor-pane span {
-  color: var(--ink-soft);
-  font-size: 0.82rem;
-}
-
-.editor-pane textarea {
-  min-height: 160px;
-  max-height: 200px;
-  resize: vertical;
-  padding: 12px 14px;
-  border-radius: 14px;
-  border: 1px solid var(--border-soft);
-  color: var(--ink);
-  background: rgba(0, 0, 0, 0.3);
-  line-height: 1.6;
-}
-
-.editor-pane-translation textarea {
-  background: rgba(255, 207, 136, 0.06);
-}
-
-.editor-pane textarea[readonly] {
-  color: rgba(243, 234, 217, 0.88);
-  background: rgba(0, 0, 0, 0.38);
-}
-
-.editor-pane textarea:focus {
-  outline: 2px solid rgba(255, 207, 136, 0.35);
-  outline-offset: 1px;
-}
-
 .empty-state {
   display: grid;
   place-items: center;
@@ -1431,10 +1389,6 @@ code,
 
   .sidebar-footer {
     display: none;
-  }
-
-  .editor-columns {
-    grid-template-columns: 1fr;
   }
 
   .replace-inputs {

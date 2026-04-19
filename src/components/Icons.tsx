@@ -26,17 +26,6 @@ export const OverviewIcon = (props: IconProps) => (
   </Base>
 );
 
-export const TranslateIcon = (props: IconProps) => (
-  <Base {...props}>
-    <path d="M4 7h10" />
-    <path d="M9 3v4" />
-    <path d="M5 11c1.5 5 5 7 9 7" />
-    <path d="M13 9c-1 5-4 8-9 9" />
-    <path d="M15 21l5-11 5 11" />
-    <path d="M17 17h6" />
-  </Base>
-);
-
 export const InspectorIcon = (props: IconProps) => (
   <Base {...props}>
     <circle cx="10.5" cy="10.5" r="6" />

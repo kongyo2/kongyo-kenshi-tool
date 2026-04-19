@@ -3,21 +3,15 @@ import {
   itemCategoryLabels,
   type ItemCategory,
 } from '../shared/item-types.ts';
-import type {
-  InspectorRecord,
-  TranslationProject,
-} from '../shared/models.ts';
+import type { InspectorRecord, ModProject } from '../shared/models.ts';
 
 export interface ProjectStats {
-  descriptionCount: number;
-  descriptionTranslatedCount: number;
-  dialogCount: number;
-  dialogTranslatedCount: number;
-  nameCount: number;
-  nameTranslatedCount: number;
+  dialogLineCount: number;
+  dialogRecordCount: number;
+  entityRecordCount: number;
   recordCount: number;
-  totalCount: number;
-  translatedCount: number;
+  stringFieldCount: number;
+  textRecordCount: number;
 }
 
 export interface CategoryBreakdown {
@@ -26,52 +20,33 @@ export interface CategoryBreakdown {
   label: string;
 }
 
-export const countProjectStats = (
-  project: TranslationProject,
-): ProjectStats => {
-  let dialogCount = 0;
-  let dialogTranslatedCount = 0;
-  let nameCount = 0;
-  let nameTranslatedCount = 0;
-  let descriptionCount = 0;
-  let descriptionTranslatedCount = 0;
+export const countProjectStats = (project: ModProject): ProjectStats => {
+  let dialogLineCount = 0;
+  let dialogRecordCount = 0;
+  let entityRecordCount = 0;
 
-  for (const record of project.records) {
+  for (const record of project.textRecords) {
     if (record.kind === 'dialog') {
-      dialogCount += record.texts.length;
-      dialogTranslatedCount += record.texts.filter(
-        (text) => text.translation.length > 0,
-      ).length;
+      dialogRecordCount += 1;
+      dialogLineCount += record.texts.length;
       continue;
     }
 
-    nameCount += 1;
-    if (record.nameTranslation.length > 0) {
-      nameTranslatedCount += 1;
-    }
-
-    if (record.description.length > 0) {
-      descriptionCount += 1;
-      if (record.descriptionTranslation.length > 0) {
-        descriptionTranslatedCount += 1;
-      }
-    }
+    entityRecordCount += 1;
   }
 
-  const totalCount = dialogCount + nameCount + descriptionCount;
-  const translatedCount =
-    dialogTranslatedCount + nameTranslatedCount + descriptionTranslatedCount;
+  const stringFieldCount = project.inspectorRecords.reduce(
+    (sum, record) => sum + record.counts.strings,
+    0,
+  );
 
   return {
-    descriptionCount,
-    descriptionTranslatedCount,
-    dialogCount,
-    dialogTranslatedCount,
-    nameCount,
-    nameTranslatedCount,
-    recordCount: project.records.length,
-    totalCount,
-    translatedCount,
+    dialogLineCount,
+    dialogRecordCount,
+    entityRecordCount,
+    recordCount: project.inspectorRecords.length,
+    stringFieldCount,
+    textRecordCount: project.textRecords.length,
   };
 };
 
