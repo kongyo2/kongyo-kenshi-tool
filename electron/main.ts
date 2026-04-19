@@ -3,6 +3,8 @@ import { lstat, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  exportModMarkdownRequestSchema,
+  exportModMarkdownResponseSchema,
   exportTranslationJsonRequestSchema,
   exportTranslationJsonResponseSchema,
   importTranslationJsonResponseSchema,
@@ -15,6 +17,7 @@ import {
   createTranslationModBuffer,
   parseMod,
 } from '../src/shared/mod-format.ts';
+import { renderProjectMarkdown } from '../src/shared/mod-markdown.ts';
 import type {
   InspectorRecord,
   LoadedMod,
@@ -251,6 +254,39 @@ const registerIpc = () => {
       });
     },
   );
+
+  ipcMain.handle('mods:export-markdown', async (_event, rawInput) => {
+    const input = exportModMarkdownRequestSchema.parse(rawInput);
+    const defaultPath = path.join(
+      app.getPath('downloads'),
+      `${input.project.sourceModName}_mod_data.md`,
+    );
+    const dialogResult = await dialog.showSaveDialog({
+      defaultPath,
+      filters: [
+        {
+          extensions: ['md'],
+          name: 'Markdownファイル',
+        },
+      ],
+      title: 'modデータのMarkdown書き出し先を選択',
+    });
+
+    if (dialogResult.canceled || !dialogResult.filePath) {
+      return exportModMarkdownResponseSchema.parse({
+        canceled: true,
+        filePath: null,
+      });
+    }
+
+    const markdown = renderProjectMarkdown(input.project);
+    await writeFile(dialogResult.filePath, markdown, 'utf-8');
+
+    return exportModMarkdownResponseSchema.parse({
+      canceled: false,
+      filePath: dialogResult.filePath,
+    });
+  });
 
   ipcMain.handle('translation:import-json', async () => {
     const dialogResult = await dialog.showOpenDialog({
