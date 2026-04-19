@@ -6,6 +6,8 @@ import {
   type ItemCategory,
 } from './item-types.ts';
 import type {
+  DialogRecord,
+  EntityRecord,
   InspectorRecord,
   LoadedMod,
   TranslationProject,
@@ -14,7 +16,10 @@ import type {
 const formatNumber = (value: number) => value.toLocaleString('en-US');
 
 const escapeTableCell = (value: string) =>
-  value.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
+  value
+    .replace(/\\/g, '\\\\')
+    .replace(/\|/g, '\\|')
+    .replace(/\r?\n/g, ' ');
 
 const escapeFenced = (value: string) => value.replace(/```/g, '``\u200b`');
 
@@ -29,12 +34,15 @@ const formatMultiline = (value: string) => {
 const pluralSuffix = (label: string, count: number) =>
   `${formatNumber(count)} ${label}${count === 1 ? '' : 's'}`;
 
-const buildRecordAnchor = (uid: string) =>
-  uid
+const buildRecordAnchor = (uid: string, sequence: number) => {
+  const asciiSlug = uid
     .toLowerCase()
     .replace(/[^a-z0-9\-_:]/g, '-')
     .replace(/-{2,}/g, '-')
     .replace(/^-|-$/g, '');
+
+  return `rec-${sequence}${asciiSlug.length > 0 ? `-${asciiSlug}` : ''}`;
+};
 
 const countCategories = (records: readonly InspectorRecord[]) => {
   const counts = new Map<ItemCategory, number>();
@@ -291,6 +299,8 @@ const renderRecords = (records: readonly InspectorRecord[]) => {
     }
   }
 
+  let globalSequence = 0;
+
   for (const [modName, modRecords] of byMod) {
     lines.push(`### Records · ${modName}`);
     lines.push('');
@@ -305,7 +315,8 @@ const renderRecords = (records: readonly InspectorRecord[]) => {
       const typeEnglish = getItemTypeEnglishName(record.type);
       const displayName =
         record.name.length === 0 ? '(unnamed)' : record.name;
-      const anchor = buildRecordAnchor(record.uid);
+      const anchor = buildRecordAnchor(record.uid, globalSequence);
+      globalSequence += 1;
 
       lines.push(
         `#### <a id="${anchor}"></a>${escapeTableCell(displayName)}`,
@@ -346,12 +357,16 @@ const renderRecords = (records: readonly InspectorRecord[]) => {
 };
 
 const renderTranslations = (project: TranslationProject) => {
-  const dialogRecords = project.records.filter(
-    (record) => record.kind === 'dialog',
-  );
-  const entityRecords = project.records.filter(
-    (record) => record.kind === 'entity',
-  );
+  const dialogRecords: DialogRecord[] = [];
+  const entityRecords: EntityRecord[] = [];
+
+  for (const record of project.records) {
+    if (record.kind === 'dialog') {
+      dialogRecords.push(record);
+    } else {
+      entityRecords.push(record);
+    }
+  }
 
   if (dialogRecords.length === 0 && entityRecords.length === 0) {
     return '';
@@ -369,10 +384,6 @@ const renderTranslations = (project: TranslationProject) => {
     lines.push('### Entity Translations');
     lines.push('');
     for (const record of entityRecords) {
-      if (record.kind !== 'entity') {
-        continue;
-      }
-
       lines.push(`#### ${escapeTableCell(record.name || '(unnamed)')}`);
       lines.push('');
       lines.push(`- stringId: \`${escapeTableCell(record.stringId)}\``);
@@ -400,10 +411,6 @@ const renderTranslations = (project: TranslationProject) => {
     lines.push('### Dialog Translations');
     lines.push('');
     for (const record of dialogRecords) {
-      if (record.kind !== 'dialog') {
-        continue;
-      }
-
       lines.push(`#### ${escapeTableCell(record.name || '(unnamed)')}`);
       lines.push('');
       lines.push(`- stringId: \`${escapeTableCell(record.stringId)}\``);
