@@ -29,8 +29,17 @@ const sectionLabels: Record<SectionFilter, string> = {
   name: '名称',
 };
 
+interface DialogGroupInfo {
+  isFirst: boolean;
+  isLast: boolean;
+  translatedCount: number;
+  variationIndex: number;
+  variationTotal: number;
+}
+
 interface EditorRow {
   category: ItemCategory;
+  dialogGroup?: DialogGroupInfo;
   id: string;
   itemIndex: number;
   original: string;
@@ -43,6 +52,14 @@ interface EditorRow {
   translation: string;
   type: number;
 }
+
+const formatDialogTextLabel = (textId: string, variationIndex: number) => {
+  const match = /^text(\d+)$/i.exec(textId);
+  if (match) {
+    return `バリエーション ${variationIndex + 1}`;
+  }
+  return `${textId} (${variationIndex + 1})`;
+};
 
 interface TranslationViewProps {
   onDialogChange: (
@@ -88,17 +105,32 @@ const buildEditorRows = (
     }
 
     if (record.kind === 'dialog') {
-      record.texts.forEach((text, textIndex) => {
-        if (sectionFilter !== 'all' && sectionFilter !== 'dialog') {
-          return;
-        }
+      if (sectionFilter !== 'all' && sectionFilter !== 'dialog') {
+        return;
+      }
 
+      const variationTotal = record.texts.length;
+      const translatedCount = record.texts.reduce(
+        (acc, text) => (text.translation.length > 0 ? acc + 1 : acc),
+        0,
+      );
+
+      const pendingRows: EditorRow[] = [];
+
+      record.texts.forEach((text, textIndex) => {
         if (untranslatedOnly && text.translation.length > 0) {
           return;
         }
 
         const row: EditorRow = {
           category,
+          dialogGroup: {
+            isFirst: false,
+            isLast: false,
+            translatedCount,
+            variationIndex: textIndex,
+            variationTotal,
+          },
           id: `${record.stringId}:dialog:${text.textId}`,
           itemIndex: textIndex,
           original: text.original,
@@ -107,13 +139,13 @@ const buildEditorRows = (
           stringId: record.stringId,
           subtitle: record.name,
           textId: text.textId,
-          title: 'ダイアログ',
+          title: `セリフ・${formatDialogTextLabel(text.textId, textIndex)}`,
           translation: text.translation,
           type: record.type,
         };
 
         if (searchToken.length === 0) {
-          rows.push(row);
+          pendingRows.push(row);
           return;
         }
 
@@ -128,10 +160,22 @@ const buildEditorRows = (
         );
 
         if (haystack.includes(searchToken)) {
-          rows.push(row);
+          pendingRows.push(row);
         }
       });
 
+      pendingRows.forEach((row, index) => {
+        if (!row.dialogGroup) {
+          return;
+        }
+        row.dialogGroup = {
+          ...row.dialogGroup,
+          isFirst: index === 0,
+          isLast: index === pendingRows.length - 1,
+        };
+      });
+
+      rows.push(...pendingRows);
       return;
     }
 
@@ -448,12 +492,31 @@ export const TranslationView = ({
           >
             {virtualizer.getVirtualItems().map((virtualItem) => {
               const row = editorRows[virtualItem.index];
+              const dialogGroup = row.dialogGroup;
+              const isDialog = row.section === 'dialog';
+              const dialogProgress = dialogGroup
+                ? dialogGroup.translatedCount >= dialogGroup.variationTotal
+                  ? 'complete'
+                  : dialogGroup.translatedCount > 0
+                    ? 'partial'
+                    : 'empty'
+                : null;
               return (
                 <article
                   className={cx(
                     'entry-card',
                     `entry-${row.section}`,
                     `category-${row.category}`,
+                    isDialog && dialogGroup
+                      ? {
+                          'entry-dialog-first': dialogGroup.isFirst,
+                          'entry-dialog-last': dialogGroup.isLast,
+                          'entry-dialog-middle':
+                            !dialogGroup.isFirst && !dialogGroup.isLast,
+                          'entry-dialog-solo':
+                            dialogGroup.isFirst && dialogGroup.isLast,
+                        }
+                      : undefined,
                   )}
                   data-index={virtualItem.index}
                   key={row.id}
@@ -480,14 +543,39 @@ export const TranslationView = ({
                     <span className="entry-token entry-token-mono">
                       {row.stringId}
                     </span>
-                    {row.textId.length > 0 ? (
+                    {dialogGroup ? (
+                      <>
+                        <span className="entry-token entry-token-variation">
+                          {dialogGroup.variationIndex + 1} /{' '}
+                          {dialogGroup.variationTotal}
+                        </span>
+                        {dialogProgress ? (
+                          <span
+                            className={cx(
+                              'entry-token',
+                              'entry-dialog-progress',
+                              `entry-dialog-progress-${dialogProgress}`,
+                            )}
+                            title="このセリフの翻訳済みバリエーション"
+                          >
+                            {dialogGroup.translatedCount} /{' '}
+                            {dialogGroup.variationTotal} 翻訳済
+                          </span>
+                        ) : null}
+                      </>
+                    ) : row.textId.length > 0 ? (
                       <span className="entry-token entry-token-mono">
                         {row.textId}
                       </span>
                     ) : null}
                   </div>
+                  {isDialog && dialogGroup && dialogGroup.isFirst ? (
+                    <p className="entry-dialog-groupname">{row.subtitle}</p>
+                  ) : null}
                   <h3 className="entry-title">{row.title}</h3>
-                  <p className="entry-subtitle">{row.subtitle}</p>
+                  {!isDialog ? (
+                    <p className="entry-subtitle">{row.subtitle}</p>
+                  ) : null}
                   <div className="editor-columns">
                     <label className="editor-pane">
                       <span>原文</span>
