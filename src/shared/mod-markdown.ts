@@ -11,9 +11,74 @@ import type {
   InspectorRecord,
   LoadedMod,
   ModProject,
+  Reference,
+  ReferenceCategory,
 } from './models.ts';
 
 const formatNumber = (value: number) => value.toLocaleString('en-US');
+const dialogueTypeCode = 18;
+const dialogueLineTypeCode = 19;
+const dialogActionTypeCode = 31;
+const dialoguePackageTypeCode = 73;
+const maxDialogLineRenderDepth = 24;
+
+const formatFloatValue = (value: number) => {
+  const rounded = Number(value.toFixed(6));
+  return Number.isInteger(rounded) ? rounded.toFixed(1) : String(rounded);
+};
+
+const integerValueLabels: Record<string, Record<number, string>> = {
+  'repetition limit': {
+    0: 'DialogRepetitionEnum.DR_NO_LIMIT',
+  },
+  speaker: {
+    0: 'TalkerEnum.T_ME',
+    1: 'TalkerEnum.T_TARGET',
+    3: 'TalkerEnum.T_TARGET_WITH_RACE',
+  },
+  'target is type': {
+    0: 'CharacterTypeEnum.OT_NONE',
+  },
+  who: {
+    0: 'TalkerEnum.T_ME',
+    1: 'TalkerEnum.T_TARGET',
+  },
+};
+
+const formatIntegerValue = (key: string, value: number) => {
+  const label = integerValueLabels[key]?.[value];
+  return label ? `${value} (${label})` : String(value);
+};
+
+const referenceCategoryHints: Record<string, string> = {
+  'AI contract': 'dialog effect: starts an AI package contract',
+  'change AI': 'dialog effect: permanently changes AI package',
+  construction: 'building construction ingredients or requirements',
+  dialogs: 'dialogue package entries; values are event/priority data in FCS',
+  effects: 'dialog actions that run after this line is selected or reached',
+  'enable buildings': 'research unlocks these buildings',
+  'enable research': 'research unlocks these research records',
+  functionality: 'building functionality record used by a building',
+  ingredients: 'crafting or production ingredients',
+  inheritsFrom: 'dialogue package inheritance',
+  items: 'item/vendor/placement list; value meaning depends on the FCS field',
+  lines: 'dialogue line children or reply options',
+  nests: 'biome or town spawn entries',
+  parts: 'building visual parts; values commonly include group/chance data',
+  produces: 'production output item',
+  squad: 'fixed squad member entries',
+  'trigger campaign': 'dialog effect that starts a faction campaign',
+  'upgrades to': 'building upgrade targets',
+  vendors: 'character or faction vendor list',
+  weapons: 'character or placement weapon entries',
+  'world state': 'world-state condition entry',
+  'choosefrom list': 'random squad member pool',
+};
+
+const formatReferenceCategoryHint = (name: string) => {
+  const hint = referenceCategoryHints[name];
+  return hint ? ` - ${hint}` : '';
+};
 
 const uniquePreserveOrder = (items: readonly string[]) => {
   const result: string[] = [];
@@ -45,6 +110,311 @@ const formatMultiline = (value: string) => {
   }
 
   return '```text\n' + escapeFenced(value) + '\n```';
+};
+
+const pushIndentedBlock = (
+  lines: string[],
+  indent: string,
+  block: string,
+) => {
+  for (const line of block.split('\n')) {
+    lines.push(`${indent}${line}`);
+  }
+};
+
+const getReferenceCategory = (
+  record: InspectorRecord,
+  name: string,
+): ReferenceCategory | undefined =>
+  record.referenceCategories.find((category) => category.name === name);
+
+const getReferences = (record: InspectorRecord, name: string) =>
+  getReferenceCategory(record, name)?.references ?? [];
+
+const getStringValue = (record: InspectorRecord, key: string) =>
+  record.strings.find((entry) => entry.key === key)?.value ?? '';
+
+const getDialogRelevantRecords = (records: readonly InspectorRecord[]) =>
+  records.filter((record) =>
+    [
+      dialogueTypeCode,
+      dialogueLineTypeCode,
+      dialogActionTypeCode,
+      dialoguePackageTypeCode,
+    ].includes(record.type),
+  );
+
+const isDialogRelevantRecord = (record: Pick<InspectorRecord, 'type'>) =>
+  [
+    dialogueTypeCode,
+    dialogueLineTypeCode,
+    dialogActionTypeCode,
+    dialoguePackageTypeCode,
+    84,
+  ].includes(record.type);
+
+const hasReferenceDetails = (record: InspectorRecord) =>
+  record.referenceCategories.some(
+    (category) => category.references.length > 0,
+  );
+
+const buildRecordIndex = (records: readonly InspectorRecord[]) => {
+  const byId = new Map<string, InspectorRecord>();
+  for (const record of records) {
+    if (record.stringId.length > 0) {
+      byId.set(record.stringId, record);
+    }
+  }
+  return byId;
+};
+
+const formatPrimitiveFields = (
+  record: InspectorRecord,
+  preferredOrder: readonly string[] = [],
+) => {
+  const preferredIndex = new Map<string, number>();
+  preferredOrder.forEach((key, index) => {
+    preferredIndex.set(key, index);
+  });
+
+  const entries = [
+    ...record.values.bools.map((entry) => ({
+      key: entry.key,
+      sortGroup: 'bool',
+      value: entry.value ? 'true' : 'false',
+    })),
+    ...record.values.ints.map((entry) => ({
+      key: entry.key,
+      sortGroup: 'int',
+      value: formatIntegerValue(entry.key, entry.value),
+    })),
+    ...record.values.floats.map((entry) => ({
+      key: entry.key,
+      sortGroup: 'float',
+      value: formatFloatValue(entry.value),
+    })),
+  ].sort((left, right) => {
+    const leftPreferred = preferredIndex.get(left.key);
+    const rightPreferred = preferredIndex.get(right.key);
+
+    if (leftPreferred !== undefined || rightPreferred !== undefined) {
+      return (leftPreferred ?? 10_000) - (rightPreferred ?? 10_000);
+    }
+
+    const groupCompare = left.sortGroup.localeCompare(right.sortGroup);
+    if (groupCompare !== 0) {
+      return groupCompare;
+    }
+
+    return left.key.localeCompare(right.key, 'ja');
+  });
+
+  return entries
+    .map((entry) => `\`${escapeTableCell(entry.key)}\`=${entry.value}`)
+    .join(' · ');
+};
+
+const formatFocusedPrimitiveFields = (record: InspectorRecord) => {
+  const entries = [
+    ...record.values.bools
+      .filter((entry) => entry.value)
+      .map((entry) => ({
+        key: entry.key,
+        sortGroup: 'bool',
+        value: 'true',
+      })),
+    ...record.values.ints
+      .filter((entry) => entry.value !== 0)
+      .map((entry) => ({
+        key: entry.key,
+        sortGroup: 'int',
+        value: formatIntegerValue(entry.key, entry.value),
+      })),
+    ...record.values.floats
+      .filter((entry) => Math.abs(entry.value) > Number.EPSILON)
+      .map((entry) => ({
+        key: entry.key,
+        sortGroup: 'float',
+        value: formatFloatValue(entry.value),
+      })),
+  ].sort((left, right) => {
+    const groupCompare = left.sortGroup.localeCompare(right.sortGroup);
+    if (groupCompare !== 0) {
+      return groupCompare;
+    }
+
+    return left.key.localeCompare(right.key, 'ja');
+  });
+
+  return entries
+    .map((entry) => `\`${escapeTableCell(entry.key)}\`=${entry.value}`)
+    .join(' · ');
+};
+
+const formatReferenceValues = (reference: Reference) => {
+  const values = [
+    ['v0', reference.value0],
+    ['v1', reference.value1],
+    ['v2', reference.value2],
+  ] as const;
+
+  return values.map(([key, value]) => `${key}=${value}`).join(', ');
+};
+
+const inferReferenceSource = (targetId: string) => {
+  const separatorIndex = targetId.indexOf('-');
+  if (separatorIndex < 0 || separatorIndex === targetId.length - 1) {
+    return '';
+  }
+
+  return targetId.slice(separatorIndex + 1);
+};
+
+const getRecordLineageParts = (
+  record: Pick<InspectorRecord, 'modName' | 'saveData' | 'stringId'>,
+) => {
+  const parts: string[] = [];
+  const idSource = inferReferenceSource(record.stringId);
+
+  if (
+    idSource.length > 0 &&
+    normalizeModName(idSource) !== normalizeModName(record.modName)
+  ) {
+    parts.push(`ID source: ${escapeTableCell(idSource)}`);
+  }
+
+  parts.push(`Change: ${record.saveData.changeTypeName}`);
+
+  if (record.saveData.saveCount > 0) {
+    parts.push(`Save count: ${formatNumber(record.saveData.saveCount)}`);
+  }
+
+  if (record.saveData.changeTypeName.startsWith('Unknown')) {
+    parts.push(`Raw saveData: ${record.saveData.raw}`);
+  }
+
+  return parts;
+};
+
+const formatResolvedReference = (
+  reference: Reference,
+  recordById: ReadonlyMap<string, InspectorRecord>,
+) => {
+  const targetRecord = recordById.get(reference.targetId);
+  const values = formatReferenceValues(reference);
+
+  if (!targetRecord) {
+    const source = inferReferenceSource(reference.targetId);
+    const sourcePart =
+      source.length > 0 ? ` · source: ${escapeTableCell(source)}` : '';
+
+    return `\`${escapeTableCell(reference.targetId)}\` · unresolved/unloaded${sourcePart} (${values})`;
+  }
+
+  const heading = renderInspectorHeading(targetRecord);
+  const idPart =
+    heading === targetRecord.stringId
+      ? ''
+      : ` · \`${escapeTableCell(targetRecord.stringId)}\``;
+
+  return `${escapeTableCell(heading)}${idPart} · ${renderTypeDescriptor(targetRecord.type)} (${values})`;
+};
+
+const renderGenericReferenceCategories = (
+  lines: string[],
+  record: InspectorRecord,
+  recordById: ReadonlyMap<string, InspectorRecord>,
+  omittedCategoryNames: readonly string[],
+  indent = '',
+) => {
+  const omitted = new Set(omittedCategoryNames);
+  const categories = record.referenceCategories.filter(
+    (category) =>
+      category.references.length > 0 && !omitted.has(category.name),
+  );
+
+  if (categories.length === 0) {
+    return;
+  }
+
+  for (const category of categories) {
+    lines.push(
+      `${indent}- \`${escapeTableCell(category.name)}\`: ${pluralSuffix('reference', category.references.length)}${formatReferenceCategoryHint(category.name)}`,
+    );
+    for (const reference of category.references) {
+      lines.push(
+        `${indent}  - ${formatResolvedReference(reference, recordById)}`,
+      );
+    }
+  }
+};
+
+const renderDialogActionReferences = (
+  lines: string[],
+  label: string,
+  references: readonly Reference[],
+  recordById: ReadonlyMap<string, InspectorRecord>,
+  indent = '',
+) => {
+  if (references.length === 0) {
+    return;
+  }
+
+  lines.push(`${indent}- ${label}: ${pluralSuffix('action', references.length)}`);
+
+  for (const reference of references) {
+    const actionRecord = recordById.get(reference.targetId);
+    lines.push(
+      `${indent}  - ${formatResolvedReference(reference, recordById)}`,
+    );
+
+    if (!actionRecord) {
+      continue;
+    }
+
+    const fields = formatPrimitiveFields(actionRecord);
+    if (fields.length > 0) {
+      lines.push(`${indent}    - Fields: ${fields}`);
+    }
+
+    const actionStrings = getVisibleStringEntries(actionRecord);
+    for (const entry of actionStrings) {
+      lines.push(
+        `${indent}    - \`${escapeTableCell(entry.key)}\`: ${escapeTableCell(entry.value)}`,
+      );
+    }
+
+    renderGenericReferenceCategories(
+      lines,
+      actionRecord,
+      recordById,
+      [],
+      `${indent}    `,
+    );
+  }
+};
+
+const renderNonDialogRecordSupplement = (
+  lines: string[],
+  record: InspectorRecord,
+  recordById: ReadonlyMap<string, InspectorRecord>,
+) => {
+  if (isDialogRelevantRecord(record)) {
+    return;
+  }
+
+  const focusedFields = formatFocusedPrimitiveFields(record);
+  if (focusedFields.length > 0) {
+    lines.push('- Primitive values shown: false bools and numeric zeroes omitted for readability.');
+    lines.push(`  - ${focusedFields}`);
+    lines.push('');
+  }
+
+  if (hasReferenceDetails(record)) {
+    lines.push('- References:');
+    renderGenericReferenceCategories(lines, record, recordById, [], '  ');
+    lines.push('');
+  }
 };
 
 const pluralSuffix = (label: string, count: number) =>
@@ -174,6 +544,26 @@ const countTypes = (records: readonly InspectorRecord[]) => {
   return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
 };
 
+const countChangeTypes = (records: readonly InspectorRecord[]) => {
+  const counts = new Map<string, number>();
+  for (const record of records) {
+    counts.set(
+      record.saveData.changeTypeName,
+      (counts.get(record.saveData.changeTypeName) ?? 0) + 1,
+    );
+  }
+  return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+};
+
+const countIdSources = (records: readonly InspectorRecord[]) => {
+  const counts = new Map<string, number>();
+  for (const record of records) {
+    const source = inferReferenceSource(record.stringId) || '(unknown)';
+    counts.set(source, (counts.get(source) ?? 0) + 1);
+  }
+  return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+};
+
 const renderHeader = (project: ModProject) => {
   const totalRecords = project.inspectorRecords.length;
   const stringStats = summarizeStringRecords(project.inspectorRecords);
@@ -181,6 +571,8 @@ const renderHeader = (project: ModProject) => {
     (record): record is DialogRecord => record.kind === 'dialog',
   );
   const dialogStats = summarizeDialogRecords(dialogRecords);
+  const referenceOnlyRecords = getReferenceOnlyRecords(project.inspectorRecords);
+  const changeCounts = new Map(countChangeTypes(project.inspectorRecords));
   const entityRecordCount = project.textRecords.length - dialogRecords.length;
   const visibleTextRecordCount =
     dialogStats.renderedRecordCount + entityRecordCount;
@@ -212,6 +604,9 @@ const renderHeader = (project: ModProject) => {
   );
   lines.push('  text that is likely to matter to an LLM task.');
   lines.push(
+    '- In dialog sections, read `Dialog Structures` before the flat text list; it resolves packages, dialogue roots, line/reply links, conditions, effects, and raw reference values.',
+  );
+  lines.push(
     '- Use `String-bearing Records` when you need the raw non-empty string payload and exact keys',
   );
   lines.push('  from the source mod data.');
@@ -220,9 +615,8 @@ const renderHeader = (project: ModProject) => {
   );
   lines.push('  their counts still contribute to the summary tables.');
   lines.push(
-    '- Non-string fields are summarized as counts so the dump stays compact enough',
+    '- Non-string fields are summarized globally, while dialog-relevant primitive fields and references are preserved in detail.',
   );
-  lines.push('  for prompt construction.');
   lines.push(
     '- Empty string values are omitted from dialog and raw sections to reduce prompt noise.',
   );
@@ -231,6 +625,10 @@ const renderHeader = (project: ModProject) => {
   lines.push(`- Source project: **${project.sourceModName}**`);
   lines.push(`- Loaded mods: **${formatNumber(project.mods.length)}**`);
   lines.push(`- Total records: **${formatNumber(totalRecords)}**`);
+  lines.push(`- New records: **${formatNumber(changeCounts.get('New') ?? 0)}**`);
+  lines.push(
+    `- Changed records: **${formatNumber(changeCounts.get('Changed') ?? 0)}**`,
+  );
   lines.push(
     `- Rendered string-bearing records: **${formatNumber(stringStats.renderedRecordCount)}**`,
   );
@@ -245,6 +643,9 @@ const renderHeader = (project: ModProject) => {
   );
   lines.push(
     `- Extracted dialog lines: **${formatNumber(dialogStats.renderedTextCount)}**`,
+  );
+  lines.push(
+    `- Reference-bearing records without visible strings: **${formatNumber(referenceOnlyRecords.length)}**`,
   );
   lines.push(
     `- Omitted empty dialog variants: **${formatNumber(dialogStats.omittedEmptyTextCount)}**`,
@@ -273,6 +674,7 @@ const renderNavigation = (project: ModProject) => {
 
   lines.push('- [Category Breakdown](#category-breakdown)');
   lines.push('- [Item Type Breakdown](#item-type-breakdown)');
+  lines.push('- [Record Change Breakdown](#record-change-breakdown)');
   lines.push('- [Mods](#mods)');
 
   if (project.textRecords.length > 0) {
@@ -281,6 +683,12 @@ const renderNavigation = (project: ModProject) => {
 
   if (project.inspectorRecords.some((record) => record.strings.length > 0)) {
     lines.push('- [String-bearing Records](#string-bearing-records)');
+  }
+
+  if (getReferenceOnlyRecords(project.inspectorRecords).length > 0) {
+    lines.push(
+      '- [Reference-bearing Records Without Visible Strings](#reference-bearing-records-without-visible-strings)',
+    );
   }
 
   lines.push('');
@@ -369,6 +777,53 @@ const renderTypeBreakdown = (records: readonly InspectorRecord[]) => {
   return lines.join('\n');
 };
 
+const renderRecordChangeBreakdown = (
+  project: ModProject,
+) => {
+  if (project.inspectorRecords.length === 0) {
+    return '';
+  }
+
+  const loadedModNames = new Set(
+    project.mods.map((mod) => normalizeModName(mod.fileName)),
+  );
+  const changeCounts = countChangeTypes(project.inspectorRecords);
+  const sourceCounts = countIdSources(project.inspectorRecords);
+  const lines: string[] = [];
+
+  lines.push('## Record Change Breakdown');
+  lines.push('');
+  lines.push(
+    'Change type comes from Kenshi item save data: `New` means added by the active mod, `Changed` means an existing record was edited, and `Renamed` means the active mod changed the record name.',
+  );
+  lines.push('');
+  lines.push('| Change type | Records |');
+  lines.push('| --- | ---: |');
+  for (const [changeType, count] of changeCounts) {
+    lines.push(`| ${escapeTableCell(changeType)} | ${formatNumber(count)} |`);
+  }
+  lines.push('');
+  lines.push('### ID Source Breakdown');
+  lines.push('');
+  lines.push(
+    'The ID source is inferred from the part after the first hyphen in `stringId`. External sources usually indicate records that originated in another mod, base game file, or an earlier file name.',
+  );
+  lines.push('');
+  lines.push('| ID source | Records | Relation to loaded mod |');
+  lines.push('| --- | ---: | --- |');
+  for (const [source, count] of sourceCounts) {
+    const relation = loadedModNames.has(normalizeModName(source))
+      ? 'loaded mod'
+      : 'external/base/renamed source';
+    lines.push(
+      `| ${escapeTableCell(source)} | ${formatNumber(count)} | ${relation} |`,
+    );
+  }
+  lines.push('');
+
+  return lines.join('\n');
+};
+
 const renderMods = (mods: readonly LoadedMod[]) => {
   const lines: string[] = [];
   lines.push('## Mods');
@@ -449,11 +904,12 @@ const renderTypeDescriptor = (type: number) =>
 const renderStringBearingRecords = (records: readonly InspectorRecord[]) => {
   const stringStats = summarizeStringRecords(records);
   const stringRecords = records.filter((record) => record.strings.length > 0);
+  const recordById = buildRecordIndex(records);
   const lines: string[] = [];
   lines.push('## String-bearing Records');
   lines.push('');
   lines.push(
-    'This section preserves original string keys while omitting empty values and records that contain only empty strings.',
+    'This section preserves original string keys while omitting empty values and records that contain only empty strings. For non-dialog records it also includes loaded references and useful primitive values so item, building, vendor, squad, and world records remain understandable when exported one mod at a time.',
   );
   lines.push('');
   lines.push(
@@ -519,6 +975,7 @@ const renderStringBearingRecords = (records: readonly InspectorRecord[]) => {
       }
 
       metaParts.push(`Type: ${renderTypeDescriptor(record.type)}`);
+      metaParts.push(...getRecordLineageParts(record));
 
       if (otherFieldCounts.length > 0) {
         metaParts.push(`Other fields: ${otherFieldCounts}`);
@@ -538,6 +995,93 @@ const renderStringBearingRecords = (records: readonly InspectorRecord[]) => {
         lines.push(formatMultiline(entry.value));
         lines.push('');
       }
+
+      renderNonDialogRecordSupplement(lines, record, recordById);
+    }
+  }
+
+  return lines.join('\n');
+};
+
+const getReferenceOnlyRecords = (records: readonly InspectorRecord[]) =>
+  records.filter(
+    (record) =>
+      !isDialogRelevantRecord(record) &&
+      hasReferenceDetails(record) &&
+      getVisibleStringEntries(record).length === 0,
+  );
+
+const renderReferenceBearingRecords = (
+  records: readonly InspectorRecord[],
+) => {
+  const referenceOnlyRecords = getReferenceOnlyRecords(records);
+  if (referenceOnlyRecords.length === 0) {
+    return '';
+  }
+
+  const recordById = buildRecordIndex(records);
+  const byMod = new Map<string, InspectorRecord[]>();
+  for (const record of referenceOnlyRecords) {
+    const modName = normalizeModName(record.modName);
+    const existing = byMod.get(modName);
+    if (existing) {
+      existing.push(record);
+    } else {
+      byMod.set(modName, [record]);
+    }
+  }
+
+  const totalReferences = referenceOnlyRecords.reduce(
+    (sum, record) => sum + record.counts.references,
+    0,
+  );
+  const lines: string[] = [];
+
+  lines.push('## Reference-bearing Records Without Visible Strings');
+  lines.push('');
+  lines.push(
+    'These non-dialog records have no non-empty string fields, but their references define concrete mod behavior. This section is important for single-mod exports because it preserves relationships such as vendor inventory, squad members, building parts, crafting inputs/outputs, biome links, and faction/world-state wiring.',
+  );
+  lines.push('');
+  lines.push(
+    `Rendered: ${pluralSuffix('record', referenceOnlyRecords.length)} / ${pluralSuffix('reference', totalReferences)}`,
+  );
+  lines.push('');
+
+  for (const [modName, modRecords] of byMod) {
+    const modReferenceCount = modRecords.reduce(
+      (sum, record) => sum + record.counts.references,
+      0,
+    );
+
+    lines.push(`### Reference-bearing Records · ${escapeTableCell(modName)}`);
+    lines.push('');
+    lines.push(
+      `${pluralSuffix('record', modRecords.length)} / ${pluralSuffix('reference', modReferenceCount)} shown from \`${modName}\`.`,
+    );
+    lines.push('');
+
+    for (const record of modRecords) {
+      const heading = renderInspectorHeading(record);
+      const metaParts: string[] = [];
+      const otherFieldCounts = renderOtherFieldCounts(record.counts);
+
+      if (heading !== record.stringId) {
+        metaParts.push(`ID: \`${escapeTableCell(record.stringId)}\``);
+      }
+
+      metaParts.push(`Type: ${renderTypeDescriptor(record.type)}`);
+      metaParts.push(...getRecordLineageParts(record));
+
+      if (otherFieldCounts.length > 0) {
+        metaParts.push(`Other fields: ${otherFieldCounts}`);
+      }
+
+      lines.push(`#### ${escapeTableCell(heading)}`);
+      lines.push('');
+      lines.push(`- ${metaParts.join(' · ')}`);
+      lines.push('');
+      renderNonDialogRecordSupplement(lines, record, recordById);
     }
   }
 
@@ -602,6 +1146,383 @@ const renderEntityHeading = (record: EntityRecord) => renderBaseRecordHeading(re
 const renderInspectorHeading = (record: InspectorRecord) =>
   renderBaseRecordHeading(record);
 
+const groupInspectorRecordsByMod = (records: readonly InspectorRecord[]) => {
+  const groups = new Map<string, InspectorRecord[]>();
+
+  for (const record of records) {
+    const modName = normalizeModName(record.modName);
+    const existing = groups.get(modName);
+    if (existing) {
+      existing.push(record);
+    } else {
+      groups.set(modName, [record]);
+    }
+  }
+
+  return groups;
+};
+
+const collectReferencedDialogLineIds = (
+  records: readonly InspectorRecord[],
+) => {
+  const referencedIds = new Set<string>();
+
+  for (const record of records) {
+    if (record.type !== dialogueTypeCode && record.type !== dialogueLineTypeCode) {
+      continue;
+    }
+
+    for (const reference of getReferences(record, 'lines')) {
+      referencedIds.add(reference.targetId);
+    }
+  }
+
+  return referencedIds;
+};
+
+const renderLineTexts = (
+  lines: string[],
+  dialogText: DialogRecord | undefined,
+  indent: string,
+) => {
+  const visibleTexts = dialogText ? getVisibleDialogTexts(dialogText) : [];
+
+  if (visibleTexts.length === 0) {
+    lines.push(`${indent}- Text: (no non-empty text variants)`);
+    return;
+  }
+
+  if (visibleTexts.length === 1) {
+    const [text] = visibleTexts;
+    const label = text.textId === 'text0' ? 'Text' : `Text \`${text.textId}\``;
+    lines.push(`${indent}- ${label}:`);
+    pushIndentedBlock(lines, `${indent}  `, formatMultiline(text.original));
+    return;
+  }
+
+  lines.push(`${indent}- Text variants: ${formatNumber(visibleTexts.length)}`);
+  for (const text of visibleTexts) {
+    lines.push(`${indent}  - \`${escapeTableCell(text.textId)}\``);
+    pushIndentedBlock(lines, `${indent}    `, formatMultiline(text.original));
+  }
+};
+
+const renderDialogueLineNode = (
+  lines: string[],
+  reference: Reference,
+  recordById: ReadonlyMap<string, InspectorRecord>,
+  dialogTextById: ReadonlyMap<string, DialogRecord>,
+  visitedLineIds: ReadonlySet<string>,
+  depth: number,
+) => {
+  const indent = '  '.repeat(depth);
+  const lineRecord = recordById.get(reference.targetId);
+  const dialogText = dialogTextById.get(reference.targetId);
+
+  if (!lineRecord) {
+    lines.push(
+      `${indent}- Missing line reference: \`${escapeTableCell(reference.targetId)}\` (${formatReferenceValues(reference)})`,
+    );
+    return;
+  }
+
+  const heading = renderInspectorHeading(lineRecord);
+  const idPart =
+    heading === lineRecord.stringId
+      ? ''
+      : ` · \`${escapeTableCell(lineRecord.stringId)}\``;
+
+  lines.push(
+    `${indent}- Line: ${escapeTableCell(heading)}${idPart} (${formatReferenceValues(reference)})`,
+  );
+
+  const lineFields = formatPrimitiveFields(lineRecord, [
+    'speaker',
+    'chance permanent',
+    'chance temporary',
+    'repetition limit',
+    'score bonus',
+    'target is type',
+    'interjection',
+  ]);
+  if (lineFields.length > 0) {
+    lines.push(`${indent}  - Fields: ${lineFields}`);
+  }
+
+  lines.push(
+    `${indent}  - Lineage: ${getRecordLineageParts(lineRecord).join(' · ')}`,
+  );
+
+  renderLineTexts(lines, dialogText, `${indent}  `);
+
+  renderDialogActionReferences(
+    lines,
+    'Conditions',
+    getReferences(lineRecord, 'conditions'),
+    recordById,
+    `${indent}  `,
+  );
+  renderDialogActionReferences(
+    lines,
+    'Effects',
+    getReferences(lineRecord, 'effects'),
+    recordById,
+    `${indent}  `,
+  );
+
+  renderGenericReferenceCategories(
+    lines,
+    lineRecord,
+    recordById,
+    ['conditions', 'effects', 'lines'],
+    `${indent}  `,
+  );
+
+  const childLineReferences = getReferences(lineRecord, 'lines');
+  if (childLineReferences.length === 0) {
+    return;
+  }
+
+  if (visitedLineIds.has(lineRecord.stringId)) {
+    lines.push(`${indent}  - Replies: cycle detected; nested lines omitted.`);
+    return;
+  }
+
+  if (depth >= maxDialogLineRenderDepth) {
+    lines.push(`${indent}  - Replies: depth limit reached.`);
+    return;
+  }
+
+  const nextVisited = new Set(visitedLineIds);
+  nextVisited.add(lineRecord.stringId);
+
+  lines.push(`${indent}  - Replies: ${pluralSuffix('line', childLineReferences.length)}`);
+  for (const childReference of childLineReferences) {
+    renderDialogueLineNode(
+      lines,
+      childReference,
+      recordById,
+      dialogTextById,
+      nextVisited,
+      depth + 2,
+    );
+  }
+};
+
+const renderDialogueRecord = (
+  lines: string[],
+  record: InspectorRecord,
+  recordById: ReadonlyMap<string, InspectorRecord>,
+  dialogTextById: ReadonlyMap<string, DialogRecord>,
+) => {
+  const heading = renderInspectorHeading(record);
+  const lineReferences = getReferences(record, 'lines');
+  const tag = getStringValue(record, 'tag');
+  const fields = formatPrimitiveFields(record, [
+    'monologue',
+    'for enemies',
+    'locked',
+    'one at a time',
+    'chance permanent',
+    'chance temporary',
+    'repetition limit',
+    'score bonus',
+    'target is type',
+  ]);
+
+  lines.push(`##### ${escapeTableCell(heading)}`);
+  lines.push('');
+  lines.push(`- ID: \`${escapeTableCell(record.stringId)}\``);
+  lines.push(`- Type: ${renderTypeDescriptor(record.type)}`);
+  lines.push(`- Lineage: ${getRecordLineageParts(record).join(' · ')}`);
+
+  if (tag.length > 0) {
+    lines.push(`- Tag: ${escapeTableCell(tag)}`);
+  }
+
+  if (fields.length > 0) {
+    lines.push(`- Fields: ${fields}`);
+  }
+
+  renderDialogActionReferences(
+    lines,
+    'Conditions',
+    getReferences(record, 'conditions'),
+    recordById,
+  );
+  renderGenericReferenceCategories(
+    lines,
+    record,
+    recordById,
+    ['conditions', 'lines'],
+  );
+
+  if (lineReferences.length === 0) {
+    lines.push('- Lines: none');
+    lines.push('');
+    return;
+  }
+
+  lines.push(`- Root lines: ${pluralSuffix('line', lineReferences.length)}`);
+  lines.push('');
+  for (const reference of lineReferences) {
+    renderDialogueLineNode(
+      lines,
+      reference,
+      recordById,
+      dialogTextById,
+      new Set<string>(),
+      0,
+    );
+  }
+  lines.push('');
+};
+
+const renderStandaloneDialogLine = (
+  lines: string[],
+  record: InspectorRecord,
+  recordById: ReadonlyMap<string, InspectorRecord>,
+  dialogTextById: ReadonlyMap<string, DialogRecord>,
+) => {
+  const reference: Reference = {
+    targetId: record.stringId,
+    value0: 0,
+    value1: 0,
+    value2: 0,
+  };
+  renderDialogueLineNode(
+    lines,
+    reference,
+    recordById,
+    dialogTextById,
+    new Set<string>(),
+    0,
+  );
+};
+
+const renderDialogStructures = (
+  project: ModProject,
+  dialogRecords: readonly DialogRecord[],
+) => {
+  const dialogRelevantRecords = getDialogRelevantRecords(project.inspectorRecords);
+  if (dialogRelevantRecords.length === 0) {
+    return '';
+  }
+
+  const recordById = buildRecordIndex(project.inspectorRecords);
+  const dialogTextById = new Map<string, DialogRecord>();
+  for (const record of dialogRecords) {
+    dialogTextById.set(record.stringId, record);
+  }
+
+  const referencedLineIds = collectReferencedDialogLineIds(project.inspectorRecords);
+  const byMod = groupInspectorRecordsByMod(dialogRelevantRecords);
+  const lines: string[] = [];
+
+  lines.push('### Dialog Structures');
+  lines.push('');
+  lines.push(
+    'FCS dialog model used here: `DIALOGUE_PACKAGE.dialogs` points to dialogue roots; `DIALOGUE.lines` and `DIALOGUE_LINE.lines` point to spoken lines and replies; `conditions` and `effects` point to `DIALOG_ACTION` records. Reference values are preserved as raw `v0/v1/v2` because their meaning depends on the source FCS field.',
+  );
+  lines.push('');
+
+  for (const mod of project.mods) {
+    const modName = normalizeModName(mod.fileName);
+    const modRecords = byMod.get(modName) ?? [];
+    if (modRecords.length === 0) {
+      continue;
+    }
+
+    const packages = modRecords.filter(
+      (record) => record.type === dialoguePackageTypeCode,
+    );
+    const dialogues = modRecords.filter(
+      (record) => record.type === dialogueTypeCode,
+    );
+    const standaloneLines = modRecords.filter(
+      (record) =>
+        record.type === dialogueLineTypeCode &&
+        !referencedLineIds.has(record.stringId),
+    );
+
+    if (
+      packages.length === 0 &&
+      dialogues.length === 0 &&
+      standaloneLines.length === 0
+    ) {
+      continue;
+    }
+
+    lines.push(`#### Dialog Structures · ${escapeTableCell(modName)}`);
+    lines.push('');
+    lines.push(
+      `${pluralSuffix('package', packages.length)} · ${pluralSuffix('dialogue', dialogues.length)} · ${pluralSuffix('standalone line', standaloneLines.length)}`,
+    );
+    lines.push('');
+
+    if (packages.length > 0) {
+      lines.push('##### Dialogue Packages');
+      lines.push('');
+      for (const record of packages) {
+        const heading = renderInspectorHeading(record);
+        const tag = getStringValue(record, 'tag');
+        const dialogReferences = getReferences(record, 'dialogs');
+        const inheritedReferences = getReferences(record, 'inheritsFrom');
+
+        lines.push(`- ${escapeTableCell(heading)} · \`${escapeTableCell(record.stringId)}\``);
+        lines.push(`  - Lineage: ${getRecordLineageParts(record).join(' · ')}`);
+        if (tag.length > 0) {
+          lines.push(`  - Tag: ${escapeTableCell(tag)}`);
+        }
+        if (dialogReferences.length > 0) {
+          lines.push(
+            `  - Dialogs: ${pluralSuffix('reference', dialogReferences.length)}${formatReferenceCategoryHint('dialogs')}`,
+          );
+          for (const reference of dialogReferences) {
+            lines.push(
+              `    - ${formatResolvedReference(reference, recordById)}`,
+            );
+          }
+        }
+        if (inheritedReferences.length > 0) {
+          lines.push(
+            `  - Inherits from: ${pluralSuffix('package', inheritedReferences.length)}${formatReferenceCategoryHint('inheritsFrom')}`,
+          );
+          for (const reference of inheritedReferences) {
+            lines.push(
+              `    - ${formatResolvedReference(reference, recordById)}`,
+            );
+          }
+        }
+      }
+      lines.push('');
+    }
+
+    if (dialogues.length > 0) {
+      lines.push('##### Dialogue Trees');
+      lines.push('');
+      for (const record of dialogues) {
+        renderDialogueRecord(lines, record, recordById, dialogTextById);
+      }
+    }
+
+    if (standaloneLines.length > 0) {
+      lines.push('##### Standalone Dialogue Lines');
+      lines.push('');
+      lines.push(
+        'These `DIALOGUE_LINE` records were not reached from any loaded `DIALOGUE.lines` reference, but they still contain text or dialog metadata.',
+      );
+      lines.push('');
+      for (const record of standaloneLines) {
+        renderStandaloneDialogLine(lines, record, recordById, dialogTextById);
+      }
+      lines.push('');
+    }
+  }
+
+  return lines.join('\n');
+};
+
 const renderExtractedTextRecords = (project: ModProject) => {
   const dialogRecords: DialogRecord[] = [];
   const describedEntityRecords: EntityRecord[] = [];
@@ -661,6 +1582,12 @@ const renderExtractedTextRecords = (project: ModProject) => {
   }
   lines.push('');
 
+  const dialogStructureSection = renderDialogStructures(project, dialogRecords);
+  if (dialogStructureSection.length > 0) {
+    lines.push(dialogStructureSection);
+    lines.push('');
+  }
+
   if (describedEntityRecords.length > 0) {
     lines.push('### Entity Descriptions');
     lines.push('');
@@ -678,6 +1605,7 @@ const renderExtractedTextRecords = (project: ModProject) => {
         }
 
         metaParts.push(`Type: ${renderTypeDescriptor(record.type)}`);
+        metaParts.push(...getRecordLineageParts(record));
 
         lines.push(`##### ${escapeTableCell(heading)}`);
         lines.push('');
@@ -699,11 +1627,14 @@ const renderExtractedTextRecords = (project: ModProject) => {
     for (const [modName, records] of nameOnlyEntitiesByMod) {
       lines.push(`#### ${escapeTableCell(modName)}`);
       lines.push('');
-      lines.push('| Name | stringId | Type |');
-      lines.push('| --- | --- | --- |');
+      lines.push('| Name | stringId | Type | Change | ID source |');
+      lines.push('| --- | --- | --- | --- | --- |');
       for (const record of records) {
+        const idSource = inferReferenceSource(record.stringId);
+        const sourceLabel =
+          idSource.length === 0 ? '—' : escapeTableCell(idSource);
         lines.push(
-          `| ${escapeTableCell(record.name || '(unnamed)')} | \`${escapeTableCell(record.stringId)}\` | ${record.type} · ${getItemTypeEnglishName(record.type)} |`,
+          `| ${escapeTableCell(record.name || '(unnamed)')} | \`${escapeTableCell(record.stringId)}\` | ${record.type} · ${getItemTypeEnglishName(record.type)} | ${escapeTableCell(record.saveData.changeTypeName)} | ${sourceLabel} |`,
         );
       }
       lines.push('');
@@ -798,9 +1729,11 @@ export const renderProjectMarkdown = (project: ModProject): string => {
     renderDependencies(project.mods),
     renderCategoryBreakdown(project.inspectorRecords),
     renderTypeBreakdown(project.inspectorRecords),
+    renderRecordChangeBreakdown(project),
     renderMods(project.mods),
     renderExtractedTextRecords(project),
     renderStringBearingRecords(project.inspectorRecords),
+    renderReferenceBearingRecords(project.inspectorRecords),
   ];
 
   return sections.filter((section) => section.length > 0).join('\n') + '\n';

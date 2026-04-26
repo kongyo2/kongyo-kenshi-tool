@@ -5,9 +5,17 @@ export const dialogTextSchema = z.object({
   textId: z.string(),
 });
 
+export const itemSaveDataSchema = z.object({
+  changeType: z.number().int(),
+  changeTypeName: z.string(),
+  raw: z.number().int(),
+  saveCount: z.number().int(),
+});
+
 const baseTextRecordSchema = z.object({
   modName: z.string(),
   name: z.string(),
+  saveData: itemSaveDataSchema,
   stringId: z.string(),
   type: z.number().int(),
 });
@@ -49,10 +57,40 @@ export const recordCountsSchema = z.object({
   vector4s: z.number().int(),
 });
 
+export const keyedBooleanValueSchema = z.object({
+  key: z.string(),
+  value: z.boolean(),
+});
+
+export const keyedNumberValueSchema = z.object({
+  key: z.string(),
+  value: z.number(),
+});
+
+export const recordValuesSchema = z.object({
+  bools: z.array(keyedBooleanValueSchema),
+  floats: z.array(keyedNumberValueSchema),
+  ints: z.array(keyedNumberValueSchema),
+});
+
+export const referenceSchema = z.object({
+  targetId: z.string(),
+  value0: z.number().int(),
+  value1: z.number().int(),
+  value2: z.number().int(),
+});
+
+export const referenceCategorySchema = z.object({
+  name: z.string(),
+  references: z.array(referenceSchema),
+});
+
 export const inspectorRecordSchema = z.object({
   counts: recordCountsSchema,
   modName: z.string(),
   name: z.string(),
+  referenceCategories: z.array(referenceCategorySchema),
+  saveData: itemSaveDataSchema,
   stringId: z.string(),
   strings: z.array(
     z.object({
@@ -62,6 +100,7 @@ export const inspectorRecordSchema = z.object({
   ),
   type: z.number().int(),
   uid: z.string(),
+  values: recordValuesSchema,
 });
 
 export const loadedModSchema = z.object({
@@ -83,8 +122,12 @@ export type DialogRecord = z.infer<typeof dialogRecordSchema>;
 export type DialogText = z.infer<typeof dialogTextSchema>;
 export type EntityRecord = z.infer<typeof entityRecordSchema>;
 export type InspectorRecord = z.infer<typeof inspectorRecordSchema>;
+export type ItemSaveData = z.infer<typeof itemSaveDataSchema>;
 export type LoadedMod = z.infer<typeof loadedModSchema>;
 export type ModHeader = z.infer<typeof modHeaderSchema>;
 export type ModProject = z.infer<typeof modProjectSchema>;
 export type RecordCounts = z.infer<typeof recordCountsSchema>;
+export type RecordValues = z.infer<typeof recordValuesSchema>;
+export type Reference = z.infer<typeof referenceSchema>;
+export type ReferenceCategory = z.infer<typeof referenceCategorySchema>;
 export type TextRecord = z.infer<typeof textRecordSchema>;

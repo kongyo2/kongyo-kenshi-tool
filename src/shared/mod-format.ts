@@ -5,6 +5,7 @@ import type {
   EntityRecord,
   InspectorRecord,
   ModHeader,
+  ReferenceCategory,
   TextRecord,
 } from './models.ts';
 
@@ -48,10 +49,19 @@ const readFloat = (cursor: BinaryCursor) => {
 const readBoolean = (cursor: BinaryCursor) => {
   const value = cursor.view.getUint8(cursor.position);
   cursor.position += 1;
-  return value;
+  return value !== 0;
 };
 
 const textDecoder = new TextDecoder('utf-8');
+
+const repairCommonMojibake = (value: string) =>
+  value
+    .replace(/â€”|â€“/g, '-')
+    .replace(/â€¦/g, '...')
+    .replace(/â€˜|â€™/g, "'")
+    .replace(/â€œ|â€/g, '"')
+    .replace(/Â /g, ' ')
+    .replace(/Â/g, '');
 
 const readString = (cursor: BinaryCursor) => {
   const length = readInt(cursor);
@@ -66,7 +76,7 @@ const readString = (cursor: BinaryCursor) => {
   );
   cursor.position += length;
 
-  return textDecoder.decode(bytes);
+  return repairCommonMojibake(textDecoder.decode(bytes));
 };
 
 const readCommaList = (cursor: BinaryCursor) =>
@@ -75,31 +85,62 @@ const readCommaList = (cursor: BinaryCursor) =>
     .map((segment) => segment.trim())
     .filter((segment) => segment.length > 0);
 
-const skipBooleanBlock = (cursor: BinaryCursor) => {
-  const count = readInt(cursor);
-  for (let index = 0; index < count; index += 1) {
-    readString(cursor);
-    readBoolean(cursor);
+const getChangeTypeName = (changeType: number) => {
+  switch (changeType) {
+    case 0:
+      return 'New';
+    case 1:
+      return 'Changed';
+    case 2:
+      return 'Renamed';
+    default:
+      return `Unknown(${changeType})`;
   }
-  return count;
 };
 
-const skipFloatBlock = (cursor: BinaryCursor) => {
-  const count = readInt(cursor);
-  for (let index = 0; index < count; index += 1) {
-    readString(cursor);
-    readFloat(cursor);
-  }
-  return count;
+const decodeSaveData = (rawValue: number) => {
+  const raw = rawValue >>> 0;
+  const changeType = raw & 0xf;
+
+  return {
+    changeType,
+    changeTypeName: getChangeTypeName(changeType),
+    raw,
+    saveCount: raw >>> 4,
+  };
 };
 
-const skipIntBlock = (cursor: BinaryCursor) => {
+const readBooleanBlock = (cursor: BinaryCursor) => {
   const count = readInt(cursor);
+  const values: Array<{ key: string; value: boolean }> = [];
   for (let index = 0; index < count; index += 1) {
-    readString(cursor);
-    readInt(cursor);
+    const key = readString(cursor);
+    const value = readBoolean(cursor);
+    values.push({ key, value });
   }
-  return count;
+  return values;
+};
+
+const readFloatBlock = (cursor: BinaryCursor) => {
+  const count = readInt(cursor);
+  const values: Array<{ key: string; value: number }> = [];
+  for (let index = 0; index < count; index += 1) {
+    const key = readString(cursor);
+    const value = readFloat(cursor);
+    values.push({ key, value });
+  }
+  return values;
+};
+
+const readIntBlock = (cursor: BinaryCursor) => {
+  const count = readInt(cursor);
+  const values: Array<{ key: string; value: number }> = [];
+  for (let index = 0; index < count; index += 1) {
+    const key = readString(cursor);
+    const value = readInt(cursor);
+    values.push({ key, value });
+  }
+  return values;
 };
 
 const skipVector3Block = (cursor: BinaryCursor) => {
@@ -134,28 +175,30 @@ const skipFileBlock = (cursor: BinaryCursor) => {
   return count;
 };
 
-interface ReferenceCounts {
-  categoryCount: number;
-  totalReferences: number;
-}
-
-const skipReferenceCategories = (cursor: BinaryCursor): ReferenceCounts => {
+const readReferenceCategories = (
+  cursor: BinaryCursor,
+): ReferenceCategory[] => {
   const categoryCount = readInt(cursor);
-  let totalReferences = 0;
+  const categories: ReferenceCategory[] = [];
 
   for (let index = 0; index < categoryCount; index += 1) {
-    readString(cursor);
+    const name = readString(cursor);
     const referenceCount = readInt(cursor);
-    totalReferences += referenceCount;
+    const references: ReferenceCategory['references'] = [];
+
     for (let innerIndex = 0; innerIndex < referenceCount; innerIndex += 1) {
-      readString(cursor);
-      readInt(cursor);
-      readInt(cursor);
-      readInt(cursor);
+      references.push({
+        targetId: readString(cursor),
+        value0: readInt(cursor),
+        value1: readInt(cursor),
+        value2: readInt(cursor),
+      });
     }
+
+    categories.push({ name, references });
   }
 
-  return { categoryCount, totalReferences };
+  return categories;
 };
 
 const skipInstanceBlock = (cursor: BinaryCursor) => {
@@ -289,10 +332,12 @@ export const parseMod = (
     const name = readString(cursor);
     const stringId = readString(cursor);
     const dataType = readInt(cursor);
+    const saveData = decodeSaveData(dataType);
 
     const baseRecord = {
       modName,
       name,
+      saveData,
       stringId,
       type,
     };
@@ -306,9 +351,9 @@ export const parseMod = (
     let description = '';
     const dialogTexts: DialogText[] = [];
 
-    const boolCount = skipBooleanBlock(cursor);
-    const floatCount = skipFloatBlock(cursor);
-    const intCount = skipIntBlock(cursor);
+    const boolValues = readBooleanBlock(cursor);
+    const floatValues = readFloatBlock(cursor);
+    const intValues = readIntBlock(cursor);
     const vector3Count = skipVector3Block(cursor);
     const vector4Count = skipVector4Block(cursor);
 
@@ -336,28 +381,39 @@ export const parseMod = (
     }
 
     const fileCount = skipFileBlock(cursor);
-    const referenceCounts = skipReferenceCategories(cursor);
+    const referenceCategories = readReferenceCategories(cursor);
+    const referenceCount = referenceCategories.reduce(
+      (sum, category) => sum + category.references.length,
+      0,
+    );
     const instanceCount = skipInstanceBlock(cursor);
 
     inspectorRecords.push({
       counts: {
-        bools: boolCount,
+        bools: boolValues.length,
         files: fileCount,
-        floats: floatCount,
+        floats: floatValues.length,
         instances: instanceCount,
-        ints: intCount,
-        referenceCategories: referenceCounts.categoryCount,
-        references: referenceCounts.totalReferences,
+        ints: intValues.length,
+        referenceCategories: referenceCategories.length,
+        references: referenceCount,
         strings: totalStrings,
         vector3s: vector3Count,
         vector4s: vector4Count,
       },
       modName,
       name,
+      referenceCategories,
+      saveData,
       stringId,
       strings,
       type,
       uid: `${uidPrefix}:${recordIndex}`,
+      values: {
+        bools: boolValues,
+        floats: floatValues,
+        ints: intValues,
+      },
     });
 
     if (isDialogType && dialogTexts.length > 0) {
