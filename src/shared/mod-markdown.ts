@@ -27,22 +27,351 @@ const formatFloatValue = (value: number) => {
   return Number.isInteger(rounded) ? rounded.toFixed(1) : String(rounded);
 };
 
+const dialogActionLabels: Record<number, string> = {
+  0: 'DialogActionEnum.DA_NONE',
+  1: 'DialogActionEnum.DA_TRADE',
+  2: 'DialogActionEnum.DA_TALK_TO_LEADER',
+  3: 'DialogActionEnum.DA_JOIN_SQUAD_WITH_EDIT',
+  4: 'DialogActionEnum.DA_AFFECT_RELATIONS',
+  5: 'DialogActionEnum.DA_AFFECT_REPUTATION',
+  6: 'DialogActionEnum.DA_ATTACK_CHASE_FOREVER',
+  7: 'DialogActionEnum.DA_GO_HOME',
+  8: 'DialogActionEnum.DA_TAKE_MONEY',
+  9: 'DialogActionEnum.DA_GIVE_MONEY',
+  10: 'DialogActionEnum.DA_PAY_BOUNTY',
+  11: 'DialogActionEnum.DA_CHARACTER_EDITOR',
+  12: 'DialogActionEnum.DA_FORCE_SPEECH_TIMER',
+  13: 'DialogActionEnum.DA_DECLARE_WAR',
+  14: 'DialogActionEnum.DA_END_WAR',
+  15: 'DialogActionEnum.DA_CLEAR_AI',
+  16: 'DialogActionEnum.DA_FOLLOW_WHILE_TALKING',
+  17: 'DialogActionEnum.DA_THUG_HUNTER',
+  18: 'DialogActionEnum.DA_JOIN_SQUAD_FAST',
+  19: 'DialogActionEnum.DA_REMEMBER_CHARACTER',
+  20: 'DialogActionEnum.DA_FLAG_TEMP_ALLY',
+  21: 'DialogActionEnum.DA_FLAG_TEMP_ENEMY',
+  22: 'DialogActionEnum.DA_MATES_KILL_ME',
+  23: 'DialogActionEnum.DA_MAKE_TARGET_RUN_FASTER',
+  24: 'DialogActionEnum.DA_GIVE_TARGET_MY_SLAVES',
+  25: 'DialogActionEnum.DA_TAG_ESCAPED_SLAVE',
+  26: 'DialogActionEnum.DA_FREE_TARGET_SLAVE',
+  27: 'DialogActionEnum.DA_MERGE_WITH_SIMILAR_SQUADS',
+  28: 'DialogActionEnum.DA_SEPARATE_TO_MY_OWN_SQUAD',
+  29: 'DialogActionEnum.DA_ARREST_TARGET',
+  30: 'DialogActionEnum.DA_ARREST_TARGETS_CARRIED_PERSON',
+  31: 'DialogActionEnum.DA_ATTACK_TOWN',
+  32: 'DialogActionEnum.DA_ASSIGN_BOUNTY',
+  33: 'DialogActionEnum.DA_CRIME_ALARM',
+  34: 'DialogActionEnum.DA_RUN_AWAY',
+  35: 'DialogActionEnum.DA_INCREASE_FACTION_RANK',
+  36: 'DialogActionEnum.DA_LOCK_THIS_DIALOG',
+  37: 'DialogActionEnum.DA_ASSAULT_PHASE',
+  38: 'DialogActionEnum.DA_RETREAT_PHASE',
+  39: 'DialogActionEnum.DA_VICTORY_PHASE',
+  40: 'DialogActionEnum.DA_ENSLAVE_TARGETS_CARRIED_PERSON',
+  41: 'DialogActionEnum.CHOOSE_SLAVES_SELLING',
+  42: 'DialogActionEnum.CHOOSE_SLAVES_BUYING',
+  43: 'DialogActionEnum.CHOOSE_PRISONER_BAIL',
+  44: 'DialogActionEnum.CHOOSE_CONSCRIPTION',
+  45: 'DialogActionEnum.CHOOSE_RECRUITING',
+  46: 'DialogActionEnum.CHOOSE_HIRING_CONTRACT',
+  47: 'DialogActionEnum.SURRENDER_NON_HUMANS',
+  48: 'DialogActionEnum.CHOOSE_ANIMALS_BUYING',
+  49: 'DialogActionEnum.DA_CLEAR_BOUNTY',
+  50: 'DialogActionEnum.DA_PLAYER_SELL_PRISONERS',
+  51: 'DialogActionEnum.DA_PLAYER_SURRENDER_MEMBER_DIFFERENT_RACE',
+  52: 'DialogActionEnum.DA_SUMMON_MY_SQUAD',
+  53: 'DialogActionEnum.DA_REMOVE_SLAVE_STATUS',
+  54: 'DialogActionEnum.DA_OPEN_NEAREST_GATE',
+  55: 'DialogActionEnum.DA_ATTACK_STAY_NEAR_HOME',
+  56: 'DialogActionEnum.DA_MASSIVE_ALARM',
+  57: 'DialogActionEnum.DA_ATTACK_IF_NO_COEXIST',
+  58: 'DialogActionEnum.DA_KNOCKOUT',
+  59: 'DialogActionEnum.DA_END',
+};
+
+const dialogConditionLabels: Record<number, string> = {
+  0: 'DialogConditionEnum.DC_NONE',
+  1: 'DialogConditionEnum.DC_RELATIONS',
+  2: 'DialogConditionEnum.DC_PLAYERMONEY',
+  3: 'DialogConditionEnum.DC_REPUTATION',
+  4: 'DialogConditionEnum.DC_CARRYING_BOUNTY_ALIVE',
+  5: 'DialogConditionEnum.DC_CARRYING_BOUNTY_DEAD',
+  6: 'DialogConditionEnum.DC_FACTION_VARIABLE',
+  7: 'DialogConditionEnum.DC_IMPRISONED_BY_TARGET',
+  8: 'DialogConditionEnum.DC_IMPRISONED_BY_OTHER',
+  9: 'DialogConditionEnum.DC_IS_A_TRADER',
+  10: 'DialogConditionEnum.DC_FACTION_RANK',
+  11: 'DialogConditionEnum.DC_BUILDING_IS_CLOSED_AND_SECURED',
+  12: 'DialogConditionEnum.DC_PLAYER_TECH_LEVEL',
+  13: 'DialogConditionEnum.DC_NUM_DIALOG_EVENT_REPEATS',
+  14: 'DialogConditionEnum.DC_IS_IMPRISONED',
+  15: 'DialogConditionEnum.DC_IMPRISONMENT_IS_DEATHROW',
+  16: 'DialogConditionEnum.DC_TARGET_IN_TALKING_RANGE',
+  17: 'DialogConditionEnum.DC_IN_MY_BUILDING',
+  18: 'DialogConditionEnum.DC_TARGET_LAST_SEEN_X_HOURS_AGO',
+  19: 'DialogConditionEnum.DC_IS_LEADER',
+  20: 'DialogConditionEnum.DC_MET_TARGET_BEFORE',
+  21: 'DialogConditionEnum.DC_WEAKER_THAN_ME',
+  22: 'DialogConditionEnum.DC_STRONGER_THAN_ME',
+  23: 'DialogConditionEnum.DC_HAS_TAG',
+  24: 'DialogConditionEnum.DC_IS_ALLY',
+  25: 'DialogConditionEnum.DC_IS_ENEMY',
+  26: 'DialogConditionEnum.DC_PERSONALITY_TAG',
+  27: 'DialogConditionEnum.DC_BROKEN_LEG',
+  28: 'DialogConditionEnum.DC_BROKEN_ARM',
+  29: 'DialogConditionEnum.DC_DAMAGED_HEAD',
+  30: 'DialogConditionEnum.DC_NEARLY_KO',
+  31: 'DialogConditionEnum.DC_IN_A_NON_PLAYER_TOWN',
+  32: 'DialogConditionEnum.DC_IS_RUNNING',
+  33: 'DialogConditionEnum.DC_COPS_AROUND',
+  34: 'DialogConditionEnum.NULL_NULL_____DC_TARGET_SQUAD_SIZE',
+  35: 'DialogConditionEnum.DC_SQUAD_SIZE',
+  36: 'DialogConditionEnum.DC_IS_PLAYER',
+  37: 'DialogConditionEnum.DC_NUM_BACKPACKS',
+  38: 'DialogConditionEnum.DC_SQUAD_ONLY_ANIMALS',
+  39: 'DialogConditionEnum.DC_IS_OUTNUMBERED',
+  40: 'DialogConditionEnum.DC_BOUNTY_AMOUNT_PERCEIVED',
+  41: 'DialogConditionEnum.DC_IS_KO',
+  42: 'DialogConditionEnum.DC_IS_NEARLY_KO',
+  43: 'DialogConditionEnum.DC_SQUAD_IS_DOWN',
+  44: 'DialogConditionEnum.DC_IS_DEAD',
+  45: 'DialogConditionEnum.DC_IS_FEMALE',
+  46: 'DialogConditionEnum.DC_CARRYING_SOMEONE_TO_ENSLAVE',
+  47: 'DialogConditionEnum.DC_BOUNTY_AMOUNT_ACTUAL',
+  48: 'DialogConditionEnum.DC_IM_UNARMED',
+  49: 'DialogConditionEnum.DC_TOWN_HAS_FORTIFICATIONS_WALLS',
+  50: 'DialogConditionEnum.DC_TARGET_IS_MY_MISSION_TARGET',
+  51: 'DialogConditionEnum.DC_MY_MISSION_IS_FRIENDLY',
+  52: 'DialogConditionEnum.DC_I_LOVE_THIS_GUY',
+  53: 'DialogConditionEnum.DC_I_HATE_THIS_GUY',
+  54: 'DialogConditionEnum.DC_I_SHOULD_SCREW_THIS_GUY_OVER',
+  55: 'DialogConditionEnum.DC_I_SHOULD_HELP_THIS_GUY',
+  56: 'DialogConditionEnum.DC_IN_COMBAT',
+  57: 'DialogConditionEnum.DC_WITHIN_TOWN_WALLS',
+  58: 'DialogConditionEnum.DC_TOWN_WALLS_LOCKED_UP',
+  59: 'DialogConditionEnum.DC_IS_SLAVE',
+  60: 'DialogConditionEnum.DC_HAS_A_BASE_NEARBY',
+  61: 'DialogConditionEnum.DC_TARGET_IS_SLAVE_OF_MY_FACTION',
+  62: 'DialogConditionEnum.DC_IS_ESCAPED_SLAVE',
+  63: 'DialogConditionEnum.DC_IS_IN_LOCKED_CAGE',
+  64: 'DialogConditionEnum.DC_WEARING_LOCKED_SHACKLES',
+  65: 'DialogConditionEnum.DC_IS_SAME_RACE_AS_ME',
+  66: 'DialogConditionEnum.DC_CAN_AFFORD_BOUNTY',
+  67: 'DialogConditionEnum.DC_IS_SNEAKING',
+  68: 'DialogConditionEnum.DC_IS_INDOORS',
+  69: 'DialogConditionEnum.DC_HAS_ILLEGAL_ITEM',
+  70: 'DialogConditionEnum.DC_USING_MY_TRAINING_EQUIPMENT',
+  71: 'DialogConditionEnum.DC_STARVING',
+  72: 'DialogConditionEnum.DC_MIXED_GENDER_GROUP',
+  73: 'DialogConditionEnum.DC_TOWN_LEVEL_CURRENT_LOCATION',
+  74: 'DialogConditionEnum.DC_PLAYERS_BEST_TOWN_LEVEL',
+  75: 'DialogConditionEnum.DC_IN_A_PLAYER_TOWN',
+  76: 'DialogConditionEnum.DC_TARGET_CHARACTER_EXISTS',
+  77: 'DialogConditionEnum.DC_IS_RECRUITABLE',
+  78: 'DialogConditionEnum.DC_HAS_AI_CONTRACT',
+  79: 'DialogConditionEnum.DC_HAS_ROBOT_LIMBS',
+  80: 'DialogConditionEnum.DC_END',
+};
+
+const talkerLabels: Record<number, string> = {
+  0: 'TalkerEnum.T_ME',
+  1: 'TalkerEnum.T_TARGET',
+  2: 'TalkerEnum.T_TARGET_IF_PLAYER',
+  3: 'TalkerEnum.T_INTERJECTOR1',
+  4: 'TalkerEnum.T_INTERJECTOR2',
+  5: 'TalkerEnum.T_INTERJECTOR3',
+  6: 'TalkerEnum.T_WHOLE_SQUAD',
+  7: 'TalkerEnum.T_TARGET_WITH_RACE',
+};
+
+const eventTriggerLabels: Record<number, string> = {
+  0: 'EventTriggerEnum.EV_NONE',
+  1: 'EventTriggerEnum.EV_PLAYER_TALK_TO_ME',
+  2: 'EventTriggerEnum.EV_ANNOUNCEMENT',
+  3: 'EventTriggerEnum.EV_I_SEE_NEUTRAL_SQUAD',
+  4: 'EventTriggerEnum.EV_I_SEE_RAGDOLL',
+  6: 'EventTriggerEnum.EV_SOUND_THE_ALARM',
+  8: 'EventTriggerEnum.EV_THIEF_CAUGHT_STEALING_FROM_ME',
+  9: 'EventTriggerEnum.EV_SHOO_FROM_MY_BUILDING',
+  10: 'EventTriggerEnum.EV_MARKED_FOR_DEATH',
+  11: 'EventTriggerEnum.EV_SCREAMING_TORTURE',
+  12: 'EventTriggerEnum.EV_BAR_TALK',
+  13: 'EventTriggerEnum.EV_UNLOCK_MY_CAGE_OR_SHACKLES',
+  14: 'EventTriggerEnum.EV_UNLOCK_MY_CAGE_ATTEMPT',
+  15: 'EventTriggerEnum.EV_I_DEFEATED_SQUAD',
+  16: 'EventTriggerEnum.EV_LAUNCH_ATTACK',
+  17: 'EventTriggerEnum.EV_INTRUDER_FOUND',
+  18: 'EventTriggerEnum.EV_HEALING_OTHER_START',
+  19: 'EventTriggerEnum.EV_BEING_HEALED_START',
+  20: 'EventTriggerEnum.EV_HEALING_OTHER_FINISHED',
+  21: 'EventTriggerEnum.EV_BEING_HEALED_FINISHED',
+  22: 'EventTriggerEnum.EV_FIRSTAID_KIT_EMPTY',
+  23: 'EventTriggerEnum.EV_GET_UP_PEACE',
+  24: 'EventTriggerEnum.EV_GET_UP_FIGHT',
+  25: 'EventTriggerEnum.EV_GET_UP_UNNECCESSARY_FIGHT',
+  26: 'EventTriggerEnum.EV_HARRASSMENT_SHOUTS',
+  27: 'EventTriggerEnum.EV_I_SEE_ANIMAL_SQUAD',
+  28: 'EventTriggerEnum.EV_SPEECH_INTERRUPTED_ATTACKED_BY_TARGET',
+  29: 'EventTriggerEnum.EV_SPEECH_INTERRUPTED_ATTACKED_BY_STRANGERS',
+  30: 'EventTriggerEnum.EV_CONTRACT_JOB_ENDED',
+  31: 'EventTriggerEnum.EV_BETRAYAL',
+  32: 'EventTriggerEnum.EV_LOOTING_WEAPON_ONLY',
+  33: 'EventTriggerEnum.EV_LOOTING_EVERYTHING',
+  34: 'EventTriggerEnum.EV_I_SEE_UNIFORM_IMPOSTER',
+  35: 'EventTriggerEnum.EV_INTRODUCING_NEW_SLAVE',
+  36: 'EventTriggerEnum.EV_ESCAPING_SLAVE_SPOTTED',
+  37: 'EventTriggerEnum.EV_RECAPTURED_A_SLAVE',
+  38: 'EventTriggerEnum.EV_SHOUT_AT_SLAVE_WORKER',
+  39: 'EventTriggerEnum.EV_SLAVE_DELIVERY',
+  40: 'EventTriggerEnum.EV_ESCAPED_EX_SLAVE_SPOTTED',
+  41: 'EventTriggerEnum.EV_WITNESS_GENERIC_ASSAULT',
+  42: 'EventTriggerEnum.EV_WITNESS_LOOTING_ALLY',
+  43: 'EventTriggerEnum.EV_WITNESS_THIEF_OR_LOCKPICK',
+  44: 'EventTriggerEnum.EV_BOUNTY_SPOTTED',
+  45: 'EventTriggerEnum.EV_ESCAPED_PRISONER_SPOTTED',
+  46: 'EventTriggerEnum.EV_PRISONER_FREE_TO_GO',
+  47: 'EventTriggerEnum.EV_ALMOST_WOKE_UP',
+  48: 'EventTriggerEnum.EV_ENTER_BIOME',
+  49: 'EventTriggerEnum.EV_ENTER_TOWN',
+  50: 'EventTriggerEnum.EV_SQUAD_BROKEN',
+  51: 'EventTriggerEnum.EV_BOUGHT_ME_FROM_SLAVERY',
+  52: 'EventTriggerEnum.EV_EATING_SOMETHING_SOUNDS',
+  53: 'EventTriggerEnum.EV_WORSHIPING_SOMETHING',
+  54: 'EventTriggerEnum.EV_SLAVE_ESCAPE_OPPORTUNITY_SAVIOR',
+  55: 'EventTriggerEnum.EV_SLAVE_ESCAPE_OPPORTUNITY_ALONE',
+  56: 'EventTriggerEnum.EV_ASSASSINATION_FAILED',
+  57: 'EventTriggerEnum.EV_EATING_MY_CROPS',
+  58: 'EventTriggerEnum.EV_KIDNAPPING_MY_ALLY',
+  59: 'EventTriggerEnum.EV_USING_MY_TRAINING_EQUIPMENT',
+  60: 'EventTriggerEnum.EV_GIVE_UP_CHASE',
+  61: 'EventTriggerEnum.EV_ACID_FEET',
+  62: 'EventTriggerEnum.EV_ACID_RAIN',
+  63: 'EventTriggerEnum.EV_ACID_WATER',
+  64: 'EventTriggerEnum.EV_WINDY',
+  65: 'EventTriggerEnum.EV_POISON_GAS',
+  66: 'EventTriggerEnum.EV_I_SEE_ENEMY_PLAYER',
+  67: 'EventTriggerEnum.EV_I_SEE_ALLY_PLAYER',
+  68: 'EventTriggerEnum.EV_I_SEE_ILLEGAL_PLAYER_BUILDING',
+  69: 'EventTriggerEnum.EV_BURNING',
+  70: 'EventTriggerEnum.EV_LOST_LEG',
+  71: 'EventTriggerEnum.EV_LOST_ARM',
+  72: 'EventTriggerEnum.EV_I_SEE_PLAYER_NICE_BUILDING',
+  73: 'EventTriggerEnum.EV_TAKEN_OVER_PLAYER_TOWN',
+  74: 'EventTriggerEnum.EV_CROWD_TRIGGERED',
+  75: 'EventTriggerEnum.EV_MAX',
+};
+
+// Paraphrased from the FCS enum comments. Numeric keys follow the real FCS executable enum values.
+const eventTriggerDescriptions: Record<number, string> = {
+  0: 'no event trigger',
+  1: 'player starts an NPC conversation; target is the player character',
+  2: 'announcement event; marked unused in FCS comments',
+  3: 'speaker sees a neutral NPC squad; repeats often',
+  4: 'speaker sees a knocked-out or ragdoll target; repeats often',
+  6: 'alarm event; marked unused in FCS comments',
+  8: 'speaker personally catches a thief stealing',
+  9: 'speaker tells target to leave their building',
+  10: 'speaker is marked for death; no dialogue target',
+  11: 'speaker is being tortured; no dialogue target',
+  12: 'bar talk event; marked unused in FCS comments',
+  13: 'non-captor unlocks speaker cage or shackles; target is rescuer',
+  14: 'failed lockpick attempt on speaker cage; target is helper',
+  15: 'speaker defeated the target squad',
+  16: 'launch attack event; marked unused in FCS comments',
+  17: 'speaker finds target inside a locked or private building',
+  18: 'speaker starts healing the target',
+  19: 'target starts healing the speaker',
+  20: 'speaker finishes healing the target',
+  21: 'target finishes healing the speaker',
+  22: 'speaker runs out of medkits while healing',
+  23: 'speaker gets up after a KO when fighting is over; no target',
+  24: 'speaker gets up after a KO while fighting continues; target is opponent',
+  25: 'speaker is pushed back into a lost fight after playing dead',
+  26: 'thug hunter harassment shout while following the target',
+  27: 'speaker sees an animal squad; repeats often',
+  28: 'speech is interrupted because the target attacks',
+  29: 'speech is interrupted by an outside attacker; target is attacker',
+  30: 'AI contract or job ends; target is employer',
+  31: 'an ally unexpectedly attacks the speaker',
+  32: 'speaker loots only the target weapon',
+  33: 'speaker loots everything from the victim',
+  34: 'speaker sees a uniform impostor in looted faction gear',
+  35: 'slaver introduces a newly captured slave',
+  36: 'escaping slave is spotted',
+  37: 'escaped slave is recaptured',
+  38: 'slaver shouts at a slave worker',
+  39: 'fresh slaves are delivered to a slaver colleague',
+  40: 'escaped ex-slave or fugitive is spotted',
+  41: 'generic assault is witnessed; target is criminal',
+  42: 'looting of an ally is witnessed; target is criminal',
+  43: 'theft, lockpicking, or slave freeing is witnessed',
+  44: 'wanted bounty target is spotted',
+  45: 'escaped prisoner is spotted outside their cage',
+  46: 'prisoner sentence has ended; target is prisoner',
+  47: 'sleeping speaker almost wakes up; no target',
+  48: 'enter biome event; marked unused in FCS comments',
+  49: 'enter town event; marked unused in FCS comments',
+  50: 'squad broken event; marked unused in FCS comments',
+  51: 'speaker is bought from slavery; target is new owner',
+  52: 'speaker makes loud eating sounds; no target',
+  53: 'speaker worships an object or deity; no target',
+  54: 'slave sees masters KO and a rescuer exists',
+  55: 'slave sees masters KO while alone',
+  56: 'assassination or knockout attempt fails',
+  57: 'pests eat crops; target is hungry pest',
+  58: 'kidnapping of an ally is witnessed; target is kidnapper',
+  59: 'speaker sees target using training equipment',
+  60: 'speaker gives up a chase',
+  61: 'acidic ground burns speaker feet; no target',
+  62: 'acid rain affects the speaker; no target',
+  63: 'acid water affects the swimming speaker; no target',
+  64: 'wind or dust visibility event',
+  65: 'poison gas affects the speaker; no target',
+  66: 'speaker sees an enemy player squad; repeats often',
+  67: 'speaker sees an allied player squad; repeats often',
+  68: 'illegal player building is seen; marked unused in FCS comments',
+  69: 'speaker is burning; no target',
+  70: 'speaker loses a leg; no target',
+  71: 'speaker loses an arm; no target',
+  72: 'nice player building is seen; marked unused in FCS comments',
+  73: 'speaker takes over a player town; no target',
+  74: 'crowd event is triggered; marked unused in FCS comments',
+  75: 'sentinel value, not a playable trigger',
+};
+
 const integerValueLabels: Record<string, Record<number, string>> = {
+  'action name': dialogActionLabels,
+  'compare by': {
+    0: 'ComparisonEnum.CE_EQUALS',
+    1: 'ComparisonEnum.CE_LESS_THAN',
+    2: 'ComparisonEnum.CE_MORE_THAN',
+  },
+  'condition name': dialogConditionLabels,
   'repetition limit': {
     0: 'DialogRepetitionEnum.DR_NO_LIMIT',
+    1: 'DialogRepetitionEnum.DR_SHORT_2',
+    2: 'DialogRepetitionEnum.DR_MEDIUM_6',
+    3: 'DialogRepetitionEnum.DR_LONG_48',
+    4: 'DialogRepetitionEnum.DR_LONG_1WEEK',
+    5: 'DialogRepetitionEnum.DR_ONCE_ONLY',
+    6: 'DialogRepetitionEnum.DR_VSHORT_020',
   },
-  speaker: {
-    0: 'TalkerEnum.T_ME',
-    1: 'TalkerEnum.T_TARGET',
-    3: 'TalkerEnum.T_TARGET_WITH_RACE',
-  },
+  speaker: talkerLabels,
   'target is type': {
     0: 'CharacterTypeEnum.OT_NONE',
+    1: 'CharacterTypeEnum.OT_LAW_ENFORCEMENT',
+    2: 'CharacterTypeEnum.OT_MILITARY',
+    3: 'CharacterTypeEnum.OT_TRADER',
+    4: 'CharacterTypeEnum.OT_CIVILIAN',
+    5: 'CharacterTypeEnum.OT_DIPLOMAT',
+    6: 'CharacterTypeEnum.OT_SLAVE',
+    7: 'CharacterTypeEnum.OT_SLAVER',
+    8: 'CharacterTypeEnum.OT_BANDIT',
+    9: 'CharacterTypeEnum.OT_ADVENTURER',
+    10: 'CharacterTypeEnum.OT_END',
   },
-  who: {
-    0: 'TalkerEnum.T_ME',
-    1: 'TalkerEnum.T_TARGET',
-  },
+  who: talkerLabels,
 };
 
 const formatIntegerValue = (key: string, value: number) => {
@@ -50,11 +379,26 @@ const formatIntegerValue = (key: string, value: number) => {
   return label ? `${value} (${label})` : String(value);
 };
 
+const formatEventTriggerValue = (value: number) => {
+  const label = eventTriggerLabels[value];
+  const description = eventTriggerDescriptions[value];
+
+  if (label && description) {
+    return `${value} (${label}: ${description})`;
+  }
+
+  if (label) {
+    return `${value} (${label})`;
+  }
+
+  return String(value);
+};
+
 const referenceCategoryHints: Record<string, string> = {
   'AI contract': 'dialog effect: starts an AI package contract',
   'change AI': 'dialog effect: permanently changes AI package',
   construction: 'building construction ingredients or requirements',
-  dialogs: 'dialogue package entries; values are event/priority data in FCS',
+  dialogs: 'dialogue package entries; v0 is the FCS event trigger when known',
   effects: 'dialog actions that run after this line is selected or reached',
   'enable buildings': 'research unlocks these buildings',
   'enable research': 'research unlocks these research records',
@@ -251,14 +595,28 @@ const formatFocusedPrimitiveFields = (record: InspectorRecord) => {
     .join(' · ');
 };
 
-const formatReferenceValues = (reference: Reference) => {
+const formatReferenceValue = (
+  key: 'v0' | 'v1' | 'v2',
+  value: number,
+  categoryName?: string,
+) => {
+  if (categoryName === 'dialogs' && key === 'v0') {
+    return `${key}=${formatEventTriggerValue(value)}`;
+  }
+
+  return `${key}=${value}`;
+};
+
+const formatReferenceValues = (reference: Reference, categoryName?: string) => {
   const values = [
     ['v0', reference.value0],
     ['v1', reference.value1],
     ['v2', reference.value2],
   ] as const;
 
-  return values.map(([key, value]) => `${key}=${value}`).join(', ');
+  return values
+    .map(([key, value]) => formatReferenceValue(key, value, categoryName))
+    .join(', ');
 };
 
 const inferReferenceSource = (targetId: string) => {
@@ -299,9 +657,10 @@ const getRecordLineageParts = (
 const formatResolvedReference = (
   reference: Reference,
   recordById: ReadonlyMap<string, InspectorRecord>,
+  categoryName?: string,
 ) => {
   const targetRecord = recordById.get(reference.targetId);
-  const values = formatReferenceValues(reference);
+  const values = formatReferenceValues(reference, categoryName);
 
   if (!targetRecord) {
     const source = inferReferenceSource(reference.targetId);
@@ -343,7 +702,7 @@ const renderGenericReferenceCategories = (
     );
     for (const reference of category.references) {
       lines.push(
-        `${indent}  - ${formatResolvedReference(reference, recordById)}`,
+        `${indent}  - ${formatResolvedReference(reference, recordById, category.name)}`,
       );
     }
   }
@@ -1422,7 +1781,7 @@ const renderDialogStructures = (
   lines.push('### Dialog Structures');
   lines.push('');
   lines.push(
-    'FCS dialog model used here: `DIALOGUE_PACKAGE.dialogs` points to dialogue roots; `DIALOGUE.lines` and `DIALOGUE_LINE.lines` point to spoken lines and replies; `conditions` and `effects` point to `DIALOG_ACTION` records. Reference values are preserved as raw `v0/v1/v2` because their meaning depends on the source FCS field.',
+    'FCS dialog model used here: `DIALOGUE_PACKAGE.dialogs` points to dialogue roots; `DIALOGUE.lines` and `DIALOGUE_LINE.lines` point to spoken lines and replies; `conditions` and `effects` point to `DIALOG_ACTION` records. Reference values are preserved as `v0/v1/v2`, with known FCS enum labels added where the source field is understood.',
   );
   lines.push('');
 
@@ -1480,7 +1839,7 @@ const renderDialogStructures = (
           );
           for (const reference of dialogReferences) {
             lines.push(
-              `    - ${formatResolvedReference(reference, recordById)}`,
+              `    - ${formatResolvedReference(reference, recordById, 'dialogs')}`,
             );
           }
         }
