@@ -340,14 +340,715 @@ const eventTriggerDescriptions: Record<number, string> = {
   75: 'sentinel value, not a playable trigger',
 };
 
+const createSequentialEnumLabels = (
+  enumName: string,
+  values: readonly string[],
+) =>
+  Object.fromEntries(
+    values.map((name, index) => [index, `${enumName}.${name}`]),
+  ) as Record<number, string>;
+
+const createOffsetEnumLabels = (
+  enumName: string,
+  firstValue: number,
+  values: readonly string[],
+) =>
+  Object.fromEntries(
+    values.map((name, index) => [firstValue + index, `${enumName}.${name}`]),
+  ) as Record<number, string>;
+
+const armourClassLabels = createSequentialEnumLabels('ArmourClass', [
+  'GEAR_CLOTH',
+  'GEAR_LIGHT',
+  'GEAR_MEDIUM',
+  'GEAR_HEAVY',
+  'GEAR_MAX',
+]);
+
+const armourRarityLabels = createSequentialEnumLabels('ArmourRarity', [
+  'GEAR_PROTOTYPE',
+  'GEAR_CHEAP',
+  'GEAR_STANDARD',
+  'GEAR_GOOD',
+  'GEAR_QUALITY',
+  'GEAR_MASTER',
+]);
+
+const attachSlotLabels = createSequentialEnumLabels('AttachSlot', [
+  'ATTACH_WEAPON',
+  'ATTACH_BACK',
+  'ATTACH_HAIR',
+  'ATTACH_HAT',
+  'ATTACH_EYES',
+  'ATTACH_BODY',
+  'ATTACH_LEGS',
+  'ATTACH_NONE',
+  'ATTACH_SHIRT',
+  'ATTACH_BOOTS',
+  'ATTACH_GLOVES',
+  'ATTACH_NECK',
+  'ATTACH_BACKPACK',
+  'ATTACH_BEARD',
+  'ATTACH_BELT',
+]);
+
+const blackboardSignalFunctionLabels = createSequentialEnumLabels(
+  'BlackboardSignalFunctions',
+  [
+    'SIGNAL_NONE',
+    'SIG_RETREAT_CANNIBAL_RAID',
+    'SIG_AT_SAFE_TOWN',
+    'SIG_AT_HOME_TOWN',
+    'SIG_CANNIBAL_START_PATROL',
+    'SIG_SQUAD_NOT_INTACT',
+    'SIG_START_PATROL',
+    'SIG_DIPLOMAT_MISSION',
+    'SIG_DEFEAT_SQUAD',
+    'SIG_HOME_OWNER_KEEP_LOCKED',
+    'SIG_GATHER_UP_ALL_LOCAL_PRISONERS',
+    'SIG_SLAVER_SHIP_TO_WORKCAMPS',
+    'SIG_BODYGUARD',
+    'SIG_BECOME_EX_SLAVE',
+    'SIG_OUT_OF_DANGER',
+    'SIG_DEFEND_PLAYER_TOWN_TIMED',
+    'SIG_WANDERING_TOWN_TO_TOWN',
+    'SIG_HANG_OUT_AT_BAR',
+    'SIG_RAIDING_WEAK_VILLAGES',
+    'WAR_GATHER_FORCES',
+    'WAR_ASSAULT_TOWN',
+    'WAR_BATTLE_MEETING',
+    'SIG_REFUGEE_DISBAND',
+    'SIG_START_PATROL_RUNNING',
+    'SIG_GATHER_UP_ALL_LOCAL_PRISONERS_UNHOLY',
+    'SIG_RETREAT_CANNIBAL_RAID_TO_NEAREST_NEST',
+    'SIG_HANG_OUT_OUTDOORS_ONLY',
+    'SIG_CANNIBALS_AT_HOME',
+    'SIG_SLAVER_SHIP_TO_ANYWHERE_CLOSE',
+    'SIG_PASSING_BY_TOWN_ASSAULT',
+    'SIG_OCCUPY_CONQUERED_TOWN',
+    'SIG_DEFEND_PLAYER_TOWN_CAMPAIGN',
+    'WAR_ASSAULT_TOWN_CANNIBAL',
+    'SIG_TIMED_CONTRACT',
+  ],
+);
+
+const bodyPartTypeLabels = createSequentialEnumLabels('BodyPartType', [
+  'PART_TORSO',
+  'PART_LEG',
+  'PART_ARM',
+  'PART_HEAD',
+]);
+
+const buildingDesignationLabels = createSequentialEnumLabels(
+  'BuildingDesignation',
+  [
+    'BD_NONE',
+    'BD_SHOP',
+    'BD_BARRACKS',
+    'BD_BAR',
+    'BD_HOSPITAL',
+    'BD_ARMOURY',
+    'BD_TREASURE',
+    'BD_PRISON',
+    'BD_HQ',
+    'BD_RESIDENTIAL',
+    'BD_SLAVE_STORAGE',
+    'BD_RESIDENTIAL_SMALL',
+  ],
+);
+
+const buildingFunctionLabels = createSequentialEnumLabels('BuildingFunction', [
+  'BF_ANY',
+  'BF_MINE',
+  'BF_RESOURCE_STORAGE',
+  'BF_RESEARCH',
+  'BF_REFINERY',
+  'BF_GENERATOR',
+  'BF_BED',
+  'BF_TRAINING',
+  'BF_CAGE',
+  'BF_SHOP',
+  'BF_CRAFTING',
+  'BF_CORPSE_DISPOSAL',
+  'BF_TURRET',
+  'BF_GENERAL_STORAGE',
+  'BF_ITEM_FURNACE',
+  'BF_LIGHT',
+  'BF_TABLE',
+  'BF_CHAIR',
+  'BF_FLUFF',
+  'BF_SHELL_WITH_INTERIOR',
+  'BF_WALL',
+  'BF_GATE',
+  'BF_DOOR',
+  'BF_BATTERY',
+  'BF_THRONE',
+  'BF_SKELETON_BED',
+  'BF_RAIN_COLLECTOR',
+  'BF_MINE_NATURAL',
+  'BF_STEERING',
+  'BF_ENGINE',
+  'BF_LIQUID_TANK',
+]);
+
+const buildingSoundLabels = createSequentialEnumLabels('BuildingSound', [
+  'None',
+  'Bed',
+  'Dummy',
+  'Farm',
+  'Generator',
+  'Grain_Silo',
+  'House',
+  'Mine_Ore',
+  'Mine_Stone',
+  'Research_Bench',
+  'Store_Armor',
+  'Store_Building_Materials',
+  'Store_Flour',
+  'Store_Ore',
+  'Store_Prisoner',
+  'Store_Rum',
+  'Store_Stones',
+  'Stove',
+  'Well',
+  'Wind_Generator',
+  'Chain_Bench',
+  'Fabric_Loom',
+  'Leather_Bench',
+  'Medical_Desk',
+  'Plate_Station',
+  'Shop_Counter',
+  'Smithy',
+  'Stone_Processor',
+  'Armorer',
+  'Bar',
+  'Boxes',
+  'Campfire',
+  'Gate',
+  'General_Goods',
+  'Hive_Hut',
+  'Lamp',
+  'Long_House',
+  'Outhouse',
+  'Tailor',
+  'Tower',
+  'Travel',
+  'Turret',
+  'Wall_Metal',
+  'Wall_Station_House',
+  'Wall_Stone',
+  'Wall_Wood',
+  'Wood_Object_Big',
+  'Wood_Object_Small',
+]);
+
+const characterAnimCategoryLabels = createSequentialEnumLabels(
+  'CharacterAnimCategory',
+  [
+    'ANIM_NORMAL',
+    'ANIM_IMPRISONED',
+    'ANIM_SLEEPING',
+    'ANIM_CARRIED',
+    'ANIM_SWIMMING',
+    'ANIM_GROUNDED',
+    'ANIM_COMBAT',
+    'ANIM_ATTACKS',
+    'ANIM_RANGED',
+  ],
+);
+
+const characterTypeLabels = createSequentialEnumLabels('CharacterTypeEnum', [
+  'OT_NONE',
+  'OT_LAW_ENFORCEMENT',
+  'OT_MILITARY',
+  'OT_TRADER',
+  'OT_CIVILIAN',
+  'OT_DIPLOMAT',
+  'OT_SLAVE',
+  'OT_SLAVER',
+  'OT_BANDIT',
+  'OT_ADVENTURER',
+  'OT_END',
+]);
+
+const colourChannelLabels = createSequentialEnumLabels('ColourChannel', [
+  'RED',
+  'GREEN',
+  'BLUE',
+  'ALPHA',
+]);
+
+const cutDirectionLabels = createSequentialEnumLabels('CutDirection', [
+  'CUT_DEFAULT',
+  'CUT_DOWNWARD',
+  'CUT_LEFT',
+  'CUT_RIGHT',
+  'CUT_THRUST',
+  'CUT_UPWARDS',
+  'CUT_PIERCED',
+  'CUT_REAR_DOWNWARD',
+  'CUT_REAR_LEFT',
+  'CUT_REAR_RIGHT',
+]);
+
+const cutOriginationLabels = createSequentialEnumLabels('CutOrigination', [
+  'FRONT',
+  'REAR',
+  'LEFTSIDE',
+  'RIGHTSIDE',
+]);
+
+const doorMaterialLabels = createSequentialEnumLabels('DoorMaterial', [
+  'Wood',
+  'Mechanical',
+  'Gate',
+]);
+
+const doorStateLabels = createSequentialEnumLabels('DoorState', [
+  'CLOSED',
+  'OPEN',
+  'LOCKED',
+  'BROKEN',
+]);
+
+const eitherLabels = createSequentialEnumLabels('Either', [
+  'NO',
+  'YES',
+  'EITHER',
+]);
+
+const effectTypeLabels = createSequentialEnumLabels('EffectType', [
+  'NONE',
+  'CAMERA',
+  'POINT',
+  'WANDERING',
+  'GLOBAL',
+  'CAMERA_RAIN',
+  'CAMERA_ACID_RAIN',
+  'POINT_LIGHTING',
+  'WANDERING_STORM',
+  'WANDERING_GAS',
+  'GLOBAL_POINT',
+]);
+
+const effectVolumeTypeLabels = createSequentialEnumLabels('EffectVolumeType', [
+  'SPHERE',
+  'CYLINDER',
+]);
+
+const farmLayoutLabels = createSequentialEnumLabels('FarmLayout', [
+  'GRID',
+  'CLUSTER',
+  'RANDOM',
+]);
+
+const groundTypeLabels = createSequentialEnumLabels('GroundType', [
+  'GROUND_SAND',
+  'GROUND_GRASS',
+  'GROUND_CONCRETE',
+  'GROUND_WOOD',
+  'GROUND_METAL',
+  'GROUND_WATER',
+  'GROUND_MUD',
+  'GROUND_SNOW',
+  'GROUND_DIRT',
+]);
+
+const interiorSoundLabels = createSequentialEnumLabels('InteriorSound', [
+  'None',
+  'Metal',
+  'Stone',
+  'Wicker',
+  'Wood',
+]);
+
+const inventorySoundLabels = createSequentialEnumLabels('InventorySound', [
+  'Backpack',
+  'Building_Material',
+  'Fabric',
+  'Flour',
+  'Food',
+  'Kits',
+  'Leather',
+  'Luxury',
+  'Narcotics',
+  'Ore',
+  'Potato',
+  'Robotic_Component',
+  'Rum',
+  'Steel_Bar',
+  'Tools',
+  'Water',
+  'Wheat',
+  'Armor_Plating',
+  'Blueprints',
+  'Meat',
+]);
+
+const itemFunctionLabels = createSequentialEnumLabels('ItemFunction', [
+  'ITEM_NO_FUNCTION',
+  'ITEM_FIRSTAID',
+  'ITEM_MEDRIGGING',
+  'ITEM_FOOD',
+  'ITEM_CONTAINER',
+  'ITEM_WEAPON',
+  'ITEM_CLOTHING',
+  'ITEM____',
+  'ITEM_NARCOTIC',
+  'ITEM_TOOL',
+  'ITEM_ANYTHING',
+  'ITEM_BLUEPRINT',
+  'ITEM_ROBOTREPAIR',
+  'ITEM_BOOK',
+  'ITEM_MONEY',
+  'ITEM_FOOD_RESTRICTED',
+  'ITEM_AMMO',
+  'ITEM_SEVERED_LIMB',
+]);
+
+const itemPersistenceLabels = createSequentialEnumLabels('ItemPersistence', [
+  'PERSIST_NONE',
+  'PERSIST_INDOORS',
+  'PERSIST_INTOWN',
+  'PERSIST_ALWAYS',
+]);
+
+const lightEffectLabels = createSequentialEnumLabels('LightEffect', [
+  'NONE',
+  'PULSE',
+  'FLICKER',
+  'SHIMMER',
+]);
+
+const lightTypeLabels = createSequentialEnumLabels('LightType', [
+  'POINT',
+  'SPOT',
+]);
+
+const limbSlotLabels = createOffsetEnumLabels('LimbSlot', 50, [
+  'LEFT_ARM',
+  'RIGHT_ARM',
+  'LEFT_LEG',
+  'RIGHT_LEG',
+]);
+
+const miningResourceLabels = createSequentialEnumLabels('MiningResource', [
+  'NONE',
+  'IRON',
+  'STONE',
+  'COPPER',
+  'CARBON',
+  'WATER',
+  'GROUND',
+]);
+
+const moveSpeedLabels = createSequentialEnumLabels('MoveSpeed', [
+  'WALK',
+  'JOG',
+  'RUN',
+  'GROUPED',
+  'NO_SPEED_CHANGE',
+]);
+
+const nodeTypeLabels = createSequentialEnumLabels('NodeType', [
+  'NODE_SHOPKEEPER',
+  'NODE_GENERAL',
+  'NODE_GUARD_POST',
+  'NODE_TURRET',
+  'NODE_USE',
+  'NODE_LIGHT',
+  'NODE_NULL',
+]);
+
+const partMapColourLabels = createSequentialEnumLabels('PartMapColours', [
+  'White',
+  'Red',
+  'Green',
+  'Blue',
+  'Yellow',
+  'Magenta',
+  'Cyan',
+  'Orange',
+  'Purple',
+  'Teal',
+]);
+
+const pathModeLabels = createSequentialEnumLabels('PathMode', [
+  'NAVMESH_IGNORE',
+  'NAVMESH_PROJECTED',
+  'NAVMESH_OBSTACLE',
+  'NAVMESH_WALKABLE',
+]);
+
+const personalityTagLabels = createSequentialEnumLabels('PersonalityTags', [
+  'PT_NONE',
+  'PT_HONORABLE',
+  'PT_TRAITOROUS',
+  'PT___',
+  'PT__',
+  'PT_SMART',
+  'PT_DUMB',
+  'PT____',
+  'PT_____',
+  'PT_BRAVE',
+  'PT_FEARFUL',
+  'PT_WARM_KIND',
+  'PT_COLD_CRUEL',
+  'PT_NORMAL',
+  'PT_MANIACAL',
+  'PT_END',
+]);
+
+const raceSoundLabels = createSequentialEnumLabels('RaceSound', [
+  'HUMAN',
+  'SHEK',
+  'HIVE',
+  'SKELETON',
+  'BEAK',
+  'BULL',
+  'CAGE',
+  'DOG',
+  'DUCK',
+  'GARRU',
+  'GOAT',
+  'GORILLO',
+  'IRONSPIDER',
+  'LEVIATHAN',
+  'PACK',
+  'SPIDER',
+  'TURTLE',
+]);
+
+const robotLimbLabels = createSequentialEnumLabels('RobotLimb', [
+  'LEFT_ARM',
+  'RIGHT_ARM',
+  'LEFT_LEG',
+  'RIGHT_LEG',
+  'NULL_LIMB',
+]);
+
+const slaveStateLabels = createSequentialEnumLabels('SlaveStateEnum', [
+  'NOT_SLAVE',
+  'IS_SLAVE',
+  'ESCAPING_SLAVE',
+  'EX_SLAVE',
+]);
+
+const squadFormationLabels = createSequentialEnumLabels('SquadFormation', [
+  'RANDOM',
+  'CARAVAN',
+  'MILITARY',
+]);
+
+const statsEnumeratedLabels = createSequentialEnumLabels('StatsEnumerated', [
+  'STAT_NONE',
+  'STAT_STRENGTH',
+  'STAT_MELEE_ATTACK',
+  'STAT_LABOURING',
+  'STAT_SCIENCE',
+  'STAT_ENGINEERING',
+  'STAT_ROBOTICS',
+  'STAT_SMITHING_WEAPON',
+  'STAT_SMITHING_ARMOUR',
+  'STAT_MEDIC',
+  'STAT_THIEVING',
+  'STAT_TURRETS',
+  'STAT_FARMING',
+  'STAT_COOKING',
+  'STAT_HIVEMEDIC',
+  'STAT_VET',
+  'STAT_STEALTH',
+  'STAT_ATHLETICS',
+  'STAT_DEXTERITY',
+  'STAT_MELEE_DEFENCE',
+  'STAT_WEAPONS',
+  'STAT_TOUGHNESS',
+  'STAT_ASSASSINATION',
+  'STAT_SWIMMING',
+  'STAT_PERCEPTION',
+  'STAT_KATANAS',
+  'STAT_SABRES',
+  'STAT_HACKERS',
+  'STAT_HEAVYWEAPONS',
+  'STAT_BLUNT',
+  'STAT_MARTIALARTS',
+  'STAT_MASSCOMBAT',
+  'STAT_DODGE',
+  'STAT_SURVIVAL',
+  'STAT_POLEARMS',
+  'STAT_CROSSBOWS',
+  'STAT_FRIENDLY_FIRE',
+  'STAT_LOCKPICKING',
+  'STAT_SMITHING_BOW',
+  'STAT_END',
+  '_PrimaryWeaponDamage',
+  '_PrimaryWeaponSpeed',
+  '_SecondaryWeaponDamage',
+  '_SecondaryWeaponSpeed',
+  '_MaxCarryWeight',
+  '_StrengthXPRateWalk',
+  '_StrengthXPRateCombat',
+  '_AttackSpeedHeavyWeapons',
+  '_DamageResistance',
+  '_ToughnessXPRate',
+  '_KnockoutTime',
+  '_ToughnessKnockoutPoint',
+  '_WoundDeteriorationSpeed',
+  '_MaxRunSpeed',
+  '_CurrentRunSpeed',
+  '_AthleticsXPBonus',
+  '_TurretAccuracy',
+  '_TurretRateOfFire',
+  '_TurretFriendlyFireAvoidance',
+  '_BuildingRate',
+  '_RepairingRate',
+  '_Mining',
+  '_Farming',
+  '_UsingMachinery',
+  '_encumbrance',
+  '_combatSpeed',
+]);
+
+const taskPriorityLabels = createSequentialEnumLabels('taskPriority', [
+  'TP_JUST_ACTION',
+  'TP_FLUFF',
+  'TP_NON_URGENT',
+  'TP_URGENT',
+  'TP_OBEDIENCE',
+  'TP_MAX_SIZE',
+]);
+
+const taskTargetTypeLabels = createSequentialEnumLabels('TaskTargetType', [
+  'TARGET_SPECIFIC',
+  'TARGET_SELF',
+  'TARGET_LEADER',
+  'TARGET_SQUAD_MISSION',
+  'TARGET_HOME_GATE',
+]);
+
+const townTypeLabels = createSequentialEnumLabels('TownType', [
+  'TOWN_NEST',
+  'TOWN_OUTPOST',
+  'TOWN_TOWN',
+  'TOWN_VILLAGE',
+  'TOWN_RUINS',
+  'TOWN_SLAVE_CAMP',
+  'TOWN_MILITARY',
+  'TOWN_PRISON',
+  'TOWN_NEST_MARKER',
+  'TOWN_POI',
+  'TOWN_NULL',
+]);
+
+const unloadedPlatoonJobLabels = createSequentialEnumLabels(
+  'UnloadedPlatoonJob',
+  [
+    'UPJOB_NONE',
+    'UPJOB_PATROL_TOWN',
+    'UPJOB_PATROL_SHORTRANGE',
+    'UPJOB_PATROL_LONGRANGE',
+    'UPJOB_GOHOME',
+    'UPJOB_TRAVEL_TARGET',
+    'UPJOB_TRAVEL_TARGET_FAST',
+  ],
+);
+
+const wallSectionLabels = createSequentialEnumLabels('WallSection', [
+  'NORMAL',
+  'CONNECTOR',
+  'LOWER_WEDGE',
+  'SINGLE',
+  'SHORT',
+]);
+
+const warCampaignLabels = createSequentialEnumLabels('WarCampaignEnum', [
+  'ASSAULT_TOWN',
+  'CONQUER_TOWN',
+  'DEFEND_TOWN',
+  'TRADER_VISIT',
+]);
+
+const weatherAffectingLabels = createSequentialEnumLabels('WeatherAffecting', [
+  'WA_NONE',
+  'WA_DUSTSTORM',
+  'WA_ACID',
+  'WA_BURNING',
+  'WA_GAS',
+  'WA_RAIN',
+]);
+
+const weaponCategoryLabels = createSequentialEnumLabels('WeaponCategory', [
+  'SKILL_KATANAS',
+  'SKILL_SABRES',
+  'SKILL_BLUNT',
+  'SKILL_HEAVY',
+  'SKILL_HACKERS',
+  'SKILL_UNARMED',
+  'SKILL_BOW',
+  'SKILL_TURRET',
+  'ATTACK_POLEARMS',
+  'ATTACK_ELEPHANT',
+  'ATTACK_DOG',
+  'ATTACK_BULL',
+  'ATTACK_ROBOTSPIDER',
+  'ATTACK_SPIDER',
+  'ATTACK_CAGEBEAST',
+  'ATTACK_DUCK',
+  'ATTACK_GORILLA',
+  'ATTACK_GAR',
+  'ATTACK_FROG',
+  'ATTACK_GOAT',
+  'ATTACK_GIRAFFE',
+  'ATTACK_NULL',
+  'NUM_SKILL_TYPES',
+]);
+
 const integerValueLabels: Record<string, Record<number, string>> = {
+  'affect type': weatherAffectingLabels,
   'action name': dialogActionLabels,
+  animal: weaponCategoryLabels,
+  'armour cap': armourRarityLabels,
+  'armour grade': armourRarityLabels,
+  'armour max': armourRarityLabels,
+  'armour min': armourRarityLabels,
+  'attach slot': attachSlotLabels,
+  'attack type': weaponCategoryLabels,
+  'body part type': bodyPartTypeLabels,
+  'building designation': buildingDesignationLabels,
+  category: characterAnimCategoryLabels,
+  class: armourClassLabels,
+  classification: taskPriorityLabels,
   'compare by': {
     0: 'ComparisonEnum.CE_EQUALS',
     1: 'ComparisonEnum.CE_LESS_THAN',
     2: 'ComparisonEnum.CE_MORE_THAN',
   },
   'condition name': dialogConditionLabels,
+  'crossbow levels': armourRarityLabels,
+  'dirt type': groundTypeLabels,
+  'door type': doorMaterialLabels,
+  'exterior material': groundTypeLabels,
+  'force speed': moveSpeedLabels,
+  function: buildingFunctionLabels,
+  'fundamental type': characterTypeLabels,
+  'grass type': groundTypeLabels,
+  'has weapon L': eitherLabels,
+  'has weapon R': eitherLabels,
+  'heal stat': statsEnumeratedLabels,
+  'hide parts': partMapColourLabels,
+  'initial door state': doorStateLabels,
+  'interior ambience': interiorSoundLabels,
+  'interior material': groundTypeLabels,
+  'inventory sound': inventorySoundLabels,
+  'is combat mode': eitherLabels,
+  'item function': itemFunctionLabels,
+  key: warCampaignLabels,
+  layout: farmLayoutLabels,
+  'link type': wallSectionLabels,
+  'node type': nodeTypeLabels,
+  'NPC class': characterTypeLabels,
+  'path mode': pathModeLabels,
+  persistent: itemPersistenceLabels,
   'repetition limit': {
     0: 'DialogRepetitionEnum.DR_NO_LIMIT',
     1: 'DialogRepetitionEnum.DR_SHORT_2',
@@ -357,25 +1058,123 @@ const integerValueLabels: Record<string, Record<number, string>> = {
     5: 'DialogRepetitionEnum.DR_ONCE_ONLY',
     6: 'DialogRepetitionEnum.DR_VSHORT_020',
   },
+  'road type': groundTypeLabels,
+  'robotics levels': armourRarityLabels,
+  'select sound': buildingSoundLabels,
+  'signal func': blackboardSignalFunctionLabels,
+  'skill category': weaponCategoryLabels,
+  'skill category animation override': weaponCategoryLabels,
+  slave: slaveStateLabels,
+  'slope type': groundTypeLabels,
+  sounds: raceSoundLabels,
   speaker: talkerLabels,
-  'target is type': {
-    0: 'CharacterTypeEnum.OT_NONE',
-    1: 'CharacterTypeEnum.OT_LAW_ENFORCEMENT',
-    2: 'CharacterTypeEnum.OT_MILITARY',
-    3: 'CharacterTypeEnum.OT_TRADER',
-    4: 'CharacterTypeEnum.OT_CIVILIAN',
-    5: 'CharacterTypeEnum.OT_DIPLOMAT',
-    6: 'CharacterTypeEnum.OT_SLAVE',
-    7: 'CharacterTypeEnum.OT_SLAVER',
-    8: 'CharacterTypeEnum.OT_BANDIT',
-    9: 'CharacterTypeEnum.OT_ADVENTURER',
-    10: 'CharacterTypeEnum.OT_END',
-  },
+  'squad formation': squadFormationLabels,
+  'stat used': statsEnumeratedLabels,
+  'stealth mode': eitherLabels,
+  stigma: characterTypeLabels,
+  'stumble from': cutOriginationLabels,
+  'target is type': characterTypeLabels,
+  targeting: taskTargetTypeLabels,
+  'travel speed loaded': moveSpeedLabels,
+  'travel speed unloaded': moveSpeedLabels,
+  'unloaded func': unloadedPlatoonJobLabels,
+  'weather type': weatherAffectingLabels,
   who: talkerLabels,
+  'world resource mining': miningResourceLabels,
 };
 
-const formatIntegerValue = (key: string, value: number) => {
-  const label = integerValueLabels[key]?.[value];
+const contextualIntegerValueLabels: Record<
+  number,
+  Record<string, Record<number, string>>
+> = {
+  2: {
+    slot: attachSlotLabels,
+  },
+  3: {
+    slot: attachSlotLabels,
+  },
+  4: {
+    slot: attachSlotLabels,
+  },
+  6: {
+    slot: attachSlotLabels,
+  },
+  13: {
+    type: townTypeLabels,
+  },
+  82: {
+    type: effectTypeLabels,
+  },
+  88: {
+    effect: lightEffectLabels,
+    type: lightTypeLabels,
+  },
+  96: {
+    type: effectVolumeTypeLabels,
+  },
+  111: {
+    slot: limbSlotLabels,
+  },
+};
+
+const integerValuePatternLabels: Array<{
+  labels: Record<number, string>;
+  pattern: RegExp;
+}> = [
+  {
+    labels: cutDirectionLabels,
+    pattern: /^attack direction \d+$/,
+  },
+  {
+    labels: colourChannelLabels,
+    pattern: /^(?:hair|head) (?:alpha |diffuse )?channel(?: female)?$/,
+  },
+  {
+    labels: robotLimbLabels,
+    pattern: /^limb \d+$/,
+  },
+  {
+    labels: statsEnumeratedLabels,
+    pattern: /^stats (?:bad|good)\d+$/,
+  },
+  {
+    labels: personalityTagLabels,
+    pattern: /^tags (?:always|common|never|rare)\d+$/,
+  },
+  {
+    labels: weatherAffectingLabels,
+    pattern: /^weather (?:immunity|protection)\d+$/,
+  },
+];
+
+const getIntegerValueLabels = (key: string, recordType?: number) => {
+  const contextualLabels =
+    recordType === undefined
+      ? undefined
+      : contextualIntegerValueLabels[recordType]?.[key];
+
+  if (contextualLabels) {
+    return contextualLabels;
+  }
+
+  const directLabels = integerValueLabels[key];
+  if (directLabels) {
+    return directLabels;
+  }
+
+  return integerValuePatternLabels.find(({ pattern }) => pattern.test(key))
+    ?.labels;
+};
+
+const formatItemTypeValue = (value: number) =>
+  `${value} (itemType.${getItemTypeEnglishName(value)}: ${getItemTypeLabel(value)})`;
+
+const formatIntegerValue = (key: string, value: number, recordType?: number) => {
+  if (key === 'itemtype limit') {
+    return formatItemTypeValue(value);
+  }
+
+  const label = getIntegerValueLabels(key, recordType)?.[value];
   return label ? `${value} (${label})` : String(value);
 };
 
@@ -530,7 +1329,7 @@ const formatPrimitiveFields = (
     ...record.values.ints.map((entry) => ({
       key: entry.key,
       sortGroup: 'int',
-      value: formatIntegerValue(entry.key, entry.value),
+      value: formatIntegerValue(entry.key, entry.value, record.type),
     })),
     ...record.values.floats.map((entry) => ({
       key: entry.key,
@@ -572,7 +1371,7 @@ const formatFocusedPrimitiveFields = (record: InspectorRecord) => {
       .map((entry) => ({
         key: entry.key,
         sortGroup: 'int',
-        value: formatIntegerValue(entry.key, entry.value),
+        value: formatIntegerValue(entry.key, entry.value, record.type),
       })),
     ...record.values.floats
       .filter((entry) => Math.abs(entry.value) > Number.EPSILON)
