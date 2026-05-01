@@ -67,10 +67,37 @@ export const keyedNumberValueSchema = z.object({
   value: z.number(),
 });
 
+export const keyedVector3ValueSchema = z.object({
+  key: z.string(),
+  x: z.number(),
+  y: z.number(),
+  z: z.number(),
+});
+
+export const keyedVector4ValueSchema = keyedVector3ValueSchema.extend({
+  w: z.number(),
+});
+
+export const keyedFileValueSchema = z.object({
+  key: z.string(),
+  value: z.string(),
+});
+
+export const instanceValueSchema = z.object({
+  key: z.string(),
+  states: z.array(z.string()),
+  targetId: z.string(),
+  values: z.array(z.number()),
+});
+
 export const recordValuesSchema = z.object({
   bools: z.array(keyedBooleanValueSchema),
+  files: z.array(keyedFileValueSchema),
   floats: z.array(keyedNumberValueSchema),
   ints: z.array(keyedNumberValueSchema),
+  instances: z.array(instanceValueSchema),
+  vector3s: z.array(keyedVector3ValueSchema),
+  vector4s: z.array(keyedVector4ValueSchema),
 });
 
 export const referenceSchema = z.object({
@@ -108,9 +135,12 @@ export const loadedModSchema = z.object({
   filePath: z.string(),
   header: modHeaderSchema,
   recordCount: z.number().int(),
+  role: z.enum(['target', 'reference']),
 });
 
 export const modProjectSchema = z.object({
+  contextRecords: z.array(inspectorRecordSchema).default([]),
+  contextTextRecords: z.array(textRecordSchema).default([]),
   dependencies: z.array(z.string()),
   inspectorRecords: z.array(inspectorRecordSchema),
   mods: z.array(loadedModSchema),
@@ -121,8 +151,12 @@ export const modProjectSchema = z.object({
 export type DialogRecord = z.infer<typeof dialogRecordSchema>;
 export type DialogText = z.infer<typeof dialogTextSchema>;
 export type EntityRecord = z.infer<typeof entityRecordSchema>;
+export type InstanceValue = z.infer<typeof instanceValueSchema>;
 export type InspectorRecord = z.infer<typeof inspectorRecordSchema>;
 export type ItemSaveData = z.infer<typeof itemSaveDataSchema>;
+export type KeyedFileValue = z.infer<typeof keyedFileValueSchema>;
+export type KeyedVector3Value = z.infer<typeof keyedVector3ValueSchema>;
+export type KeyedVector4Value = z.infer<typeof keyedVector4ValueSchema>;
 export type LoadedMod = z.infer<typeof loadedModSchema>;
 export type ModHeader = z.infer<typeof modHeaderSchema>;
 export type ModProject = z.infer<typeof modProjectSchema>;

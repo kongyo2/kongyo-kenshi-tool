@@ -25,6 +25,7 @@ const App = () => {
   const [isLoadingProject, setIsLoadingProject] = useState(false);
   const [isExportingMarkdown, setIsExportingMarkdown] = useState(false);
   const [lastExportedPath, setLastExportedPath] = useState<string | null>(null);
+  const [referencePaths, setReferencePaths] = useState<string[]>([]);
   const [activeView, setActiveView] = useState<ViewId>('overview');
   const [, startTransition] = useTransition();
 
@@ -55,6 +56,7 @@ const App = () => {
       try {
         const loadedProject = await window.electronApi.loadMods({
           paths,
+          referencePaths,
         });
         startTransition(() => {
           setProject(loadedProject);
@@ -65,7 +67,11 @@ const App = () => {
           message:
             `${formatNumber(loadedProject.mods.length)} mod / ` +
             `${formatNumber(loadedProject.inspectorRecords.length)} レコード / ` +
-            `${formatNumber(loadedProject.textRecords.length)} 抽出テキストを読み込みました。`,
+            `${formatNumber(loadedProject.textRecords.length)} 抽出テキスト` +
+            (loadedProject.contextRecords.length > 0
+              ? ` / 参照 ${formatNumber(loadedProject.contextRecords.length)} レコード`
+              : '') +
+            'を読み込みました。',
         });
       } catch (error) {
         showNotice({
@@ -76,7 +82,7 @@ const App = () => {
         setIsLoadingProject(false);
       }
     },
-    [showNotice],
+    [referencePaths, showNotice],
   );
 
   const handlePickModFiles = useCallback(async () => {
@@ -88,6 +94,27 @@ const App = () => {
     const selectedPaths = await window.electronApi.pickModFolders();
     await loadFromPaths(selectedPaths);
   }, [loadFromPaths]);
+
+  const handlePickReferenceFolders = useCallback(async () => {
+    const selectedPaths = await window.electronApi.pickModFolders();
+    if (selectedPaths.length === 0) {
+      return;
+    }
+
+    setReferencePaths(selectedPaths);
+    showNotice({
+      kind: 'info',
+      message: `参照フォルダを ${formatNumber(selectedPaths.length)} 件設定しました。次の読み込みから使用します。`,
+    });
+  }, [showNotice]);
+
+  const handleClearReferencePaths = useCallback(() => {
+    setReferencePaths([]);
+    showNotice({
+      kind: 'info',
+      message: '参照フォルダ設定を解除しました。',
+    });
+  }, [showNotice]);
 
   const handleDrop = useCallback<DragEventHandler<HTMLDivElement>>(
     async (event) => {
@@ -211,6 +238,10 @@ const App = () => {
             onPickFolders={() => {
               void handlePickModFolders();
             }}
+            onPickReferenceFolders={() => {
+              void handlePickReferenceFolders();
+            }}
+            referencePathCount={referencePaths.length}
             setDragging={setIsDragging}
           />
         </div>
@@ -231,7 +262,12 @@ const App = () => {
           />
         );
       case 'inspector':
-        return <InspectorView records={project.inspectorRecords} />;
+        return (
+          <InspectorView
+            contextRecords={project.contextRecords}
+            records={project.inspectorRecords}
+          />
+        );
       case 'mods':
         return <ModsView mods={project.mods} onRevealFile={handleRevealFile} />;
       default:
@@ -264,6 +300,11 @@ const App = () => {
                   <span className="topbar-chip">
                     {formatNumber(project.inspectorRecords.length)} records
                   </span>
+                  {project.contextRecords.length > 0 ? (
+                    <span className="topbar-chip">
+                      参照 {formatNumber(project.contextRecords.length)}
+                    </span>
+                  ) : null}
                 </span>
                 <button
                   className="ghost-button"
@@ -281,6 +322,28 @@ const App = () => {
             )}
           </div>
           <div className="topbar-actions">
+            <button
+              className="ghost-button"
+              disabled={isBusy}
+              onClick={() => {
+                void handlePickReferenceFolders();
+              }}
+              type="button"
+            >
+              <FolderIcon height="14" width="14" />
+              参照フォルダ
+            </button>
+            {referencePaths.length > 0 ? (
+              <button
+                className="ghost-button"
+                disabled={isBusy}
+                onClick={handleClearReferencePaths}
+                type="button"
+              >
+                <CloseIcon height="14" width="14" />
+                参照解除
+              </button>
+            ) : null}
             <button
               className="ghost-button"
               disabled={isBusy}

@@ -143,36 +143,51 @@ const readIntBlock = (cursor: BinaryCursor) => {
   return values;
 };
 
-const skipVector3Block = (cursor: BinaryCursor) => {
+const readVector3Block = (cursor: BinaryCursor) => {
   const count = readInt(cursor);
+  const values: Array<{ key: string; x: number; y: number; z: number }> = [];
   for (let index = 0; index < count; index += 1) {
-    readString(cursor);
-    readFloat(cursor);
-    readFloat(cursor);
-    readFloat(cursor);
+    values.push({
+      key: readString(cursor),
+      x: readFloat(cursor),
+      y: readFloat(cursor),
+      z: readFloat(cursor),
+    });
   }
-  return count;
+  return values;
 };
 
-const skipVector4Block = (cursor: BinaryCursor) => {
+const readVector4Block = (cursor: BinaryCursor) => {
   const count = readInt(cursor);
+  const values: Array<{
+    key: string;
+    w: number;
+    x: number;
+    y: number;
+    z: number;
+  }> = [];
   for (let index = 0; index < count; index += 1) {
-    readString(cursor);
-    readFloat(cursor);
-    readFloat(cursor);
-    readFloat(cursor);
-    readFloat(cursor);
+    values.push({
+      key: readString(cursor),
+      x: readFloat(cursor),
+      y: readFloat(cursor),
+      z: readFloat(cursor),
+      w: readFloat(cursor),
+    });
   }
-  return count;
+  return values;
 };
 
-const skipFileBlock = (cursor: BinaryCursor) => {
+const readFileBlock = (cursor: BinaryCursor) => {
   const count = readInt(cursor);
+  const values: Array<{ key: string; value: string }> = [];
   for (let index = 0; index < count; index += 1) {
-    readString(cursor);
-    readString(cursor);
+    values.push({
+      key: readString(cursor),
+      value: readString(cursor),
+    });
   }
-  return count;
+  return values;
 };
 
 const readReferenceCategories = (
@@ -201,25 +216,41 @@ const readReferenceCategories = (
   return categories;
 };
 
-const skipInstanceBlock = (cursor: BinaryCursor) => {
+const readInstanceBlock = (cursor: BinaryCursor) => {
   const count = readInt(cursor);
+  const instances: Array<{
+    key: string;
+    states: string[];
+    targetId: string;
+    values: number[];
+  }> = [];
   for (let index = 0; index < count; index += 1) {
-    readString(cursor);
-    readString(cursor);
-    readFloat(cursor);
-    readFloat(cursor);
-    readFloat(cursor);
-    readFloat(cursor);
-    readFloat(cursor);
-    readFloat(cursor);
-    readFloat(cursor);
+    const key = readString(cursor);
+    const targetId = readString(cursor);
+    const values = [
+      readFloat(cursor),
+      readFloat(cursor),
+      readFloat(cursor),
+      readFloat(cursor),
+      readFloat(cursor),
+      readFloat(cursor),
+      readFloat(cursor),
+    ];
 
     const stateCount = readInt(cursor);
+    const states: string[] = [];
     for (let innerIndex = 0; innerIndex < stateCount; innerIndex += 1) {
-      readString(cursor);
+      states.push(readString(cursor));
     }
+
+    instances.push({
+      key,
+      states,
+      targetId,
+      values,
+    });
   }
-  return count;
+  return instances;
 };
 
 interface ParsedHeaderResult {
@@ -354,8 +385,8 @@ export const parseMod = (
     const boolValues = readBooleanBlock(cursor);
     const floatValues = readFloatBlock(cursor);
     const intValues = readIntBlock(cursor);
-    const vector3Count = skipVector3Block(cursor);
-    const vector4Count = skipVector4Block(cursor);
+    const vector3Values = readVector3Block(cursor);
+    const vector4Values = readVector4Block(cursor);
 
     const strings: Array<{ key: string; value: string }> = [];
     let stringCount = readInt(cursor);
@@ -380,26 +411,26 @@ export const parseMod = (
       stringCount -= 1;
     }
 
-    const fileCount = skipFileBlock(cursor);
+    const fileValues = readFileBlock(cursor);
     const referenceCategories = readReferenceCategories(cursor);
     const referenceCount = referenceCategories.reduce(
       (sum, category) => sum + category.references.length,
       0,
     );
-    const instanceCount = skipInstanceBlock(cursor);
+    const instanceValues = readInstanceBlock(cursor);
 
     inspectorRecords.push({
       counts: {
         bools: boolValues.length,
-        files: fileCount,
+        files: fileValues.length,
         floats: floatValues.length,
-        instances: instanceCount,
+        instances: instanceValues.length,
         ints: intValues.length,
         referenceCategories: referenceCategories.length,
         references: referenceCount,
         strings: totalStrings,
-        vector3s: vector3Count,
-        vector4s: vector4Count,
+        vector3s: vector3Values.length,
+        vector4s: vector4Values.length,
       },
       modName,
       name,
@@ -411,8 +442,12 @@ export const parseMod = (
       uid: `${uidPrefix}:${recordIndex}`,
       values: {
         bools: boolValues,
+        files: fileValues,
         floats: floatValues,
         ints: intValues,
+        instances: instanceValues,
+        vector3s: vector3Values,
+        vector4s: vector4Values,
       },
     });
 

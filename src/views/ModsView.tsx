@@ -30,8 +30,13 @@ export const ModsView = ({ mods, onRevealFile }: ModsViewProps) => (
           <article className="mod-card" key={mod.filePath}>
             <header className="mod-card-header">
               <h2 className="mod-card-name">{mod.fileName}</h2>
-              <span className="mod-card-type">
-                fileType {mod.header.fileType}
+              <span className="mod-card-badges">
+                <span className="mod-card-type">
+                  {mod.role === 'target' ? '対象' : '参照'}
+                </span>
+                <span className="mod-card-type">
+                  fileType {mod.header.fileType}
+                </span>
               </span>
             </header>
             <dl className="mod-card-list">

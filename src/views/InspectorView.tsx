@@ -17,6 +17,7 @@ import type { InspectorRecord } from '../shared/models.ts';
 import { formatNumber, normaliseSearchTarget } from '../lib/utils.ts';
 
 interface InspectorViewProps {
+  contextRecords: readonly InspectorRecord[];
   records: readonly InspectorRecord[];
 }
 
@@ -75,31 +76,46 @@ const filterRecords = (
   });
 };
 
-export const InspectorView = ({ records }: InspectorViewProps) => {
+const formatNumberValue = (value: number) => {
+  const rounded = Number(value.toFixed(6));
+  return Number.isInteger(rounded) ? rounded.toFixed(1) : String(rounded);
+};
+
+export const InspectorView = ({
+  contextRecords,
+  records,
+}: InspectorViewProps) => {
   const [searchText, setSearchText] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<'all' | ItemCategory>(
     'all',
   );
   const [modFilter, setModFilter] = useState<'all' | string>('all');
+  const [includeContextRecords, setIncludeContextRecords] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const deferredSearch = useDeferredValue(searchText);
+  const visibleRecords = useMemo(
+    () =>
+      includeContextRecords ? [...records, ...contextRecords] : [...records],
+    [contextRecords, includeContextRecords, records],
+  );
 
   const availableCategories = useMemo(
-    () => gatherCategories(records),
-    [records],
+    () => gatherCategories(visibleRecords),
+    [visibleRecords],
   );
   const availableMods = useMemo(() => {
     const names = new Set<string>();
-    for (const record of records) {
+    for (const record of visibleRecords) {
       names.add(record.modName);
     }
     return Array.from(names).sort((a, b) => a.localeCompare(b, 'ja'));
-  }, [records]);
+  }, [visibleRecords]);
 
   const filteredRecords = useMemo(
-    () => filterRecords(records, deferredSearch, categoryFilter, modFilter),
-    [categoryFilter, deferredSearch, modFilter, records],
+    () =>
+      filterRecords(visibleRecords, deferredSearch, categoryFilter, modFilter),
+    [categoryFilter, deferredSearch, modFilter, visibleRecords],
   );
 
   const virtualizer = useVirtualizer({
@@ -124,8 +140,11 @@ export const InspectorView = ({ records }: InspectorViewProps) => {
           <p className="eyebrow">modインスペクタ</p>
           <h1 className="view-title">レコードブラウザ</h1>
           <p className="view-subtitle">
-            全{formatNumber(records.length)}レコード中{' '}
+            対象 {formatNumber(records.length)} レコード中{' '}
             {formatNumber(filteredRecords.length)} 件を表示
+            {includeContextRecords && contextRecords.length > 0
+              ? ` / 参照 ${formatNumber(contextRecords.length)} レコード込み`
+              : ''}
           </p>
         </div>
       </div>
@@ -139,6 +158,18 @@ export const InspectorView = ({ records }: InspectorViewProps) => {
           value={searchText}
         />
         <div className="filter-row">
+          {contextRecords.length > 0 ? (
+            <label className="toggle-inline">
+              <input
+                checked={includeContextRecords}
+                onChange={(event) =>
+                  setIncludeContextRecords(event.target.checked)
+                }
+                type="checkbox"
+              />
+              参照レコードも表示
+            </label>
+          ) : null}
           <label className="select-field">
             <span>mod</span>
             <select
@@ -269,6 +300,159 @@ export const InspectorView = ({ records }: InspectorViewProps) => {
                           ))}
                         </ul>
                       )}
+                      <h4>プリミティブ値</h4>
+                      {record.values.bools.length === 0 &&
+                      record.values.ints.length === 0 &&
+                      record.values.floats.length === 0 ? (
+                        <p className="subtle-text">
+                          bool / int / float フィールドはありません。
+                        </p>
+                      ) : (
+                        <ul className="string-list">
+                          {record.values.bools.map((entry, entryIndex) => (
+                            <li
+                              className="string-list-row"
+                              key={`bool:${entry.key}:${entryIndex}`}
+                            >
+                              <span className="string-key">{entry.key}</span>
+                              <pre className="string-value">
+                                {entry.value ? 'true' : 'false'}
+                              </pre>
+                            </li>
+                          ))}
+                          {record.values.ints.map((entry, entryIndex) => (
+                            <li
+                              className="string-list-row"
+                              key={`int:${entry.key}:${entryIndex}`}
+                            >
+                              <span className="string-key">{entry.key}</span>
+                              <pre className="string-value">{entry.value}</pre>
+                            </li>
+                          ))}
+                          {record.values.floats.map((entry, entryIndex) => (
+                            <li
+                              className="string-list-row"
+                              key={`float:${entry.key}:${entryIndex}`}
+                            >
+                              <span className="string-key">{entry.key}</span>
+                              <pre className="string-value">
+                                {formatNumberValue(entry.value)}
+                              </pre>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {record.values.files.length > 0 ? (
+                        <>
+                          <h4>ファイルフィールド</h4>
+                          <ul className="string-list">
+                            {record.values.files.map((entry, entryIndex) => (
+                              <li
+                                className="string-list-row"
+                                key={`file:${entry.key}:${entryIndex}`}
+                              >
+                                <span className="string-key">{entry.key}</span>
+                                <pre className="string-value">
+                                  {entry.value.length === 0
+                                    ? '(空文字)'
+                                    : entry.value}
+                                </pre>
+                              </li>
+                            ))}
+                          </ul>
+                        </>
+                      ) : null}
+                      {record.values.vector3s.length > 0 ||
+                      record.values.vector4s.length > 0 ? (
+                        <>
+                          <h4>ベクトルフィールド</h4>
+                          <ul className="string-list">
+                            {record.values.vector3s.map((entry, entryIndex) => (
+                              <li
+                                className="string-list-row"
+                                key={`v3:${entry.key}:${entryIndex}`}
+                              >
+                                <span className="string-key">{entry.key}</span>
+                                <pre className="string-value">
+                                  {`x=${formatNumberValue(entry.x)}, y=${formatNumberValue(entry.y)}, z=${formatNumberValue(entry.z)}`}
+                                </pre>
+                              </li>
+                            ))}
+                            {record.values.vector4s.map((entry, entryIndex) => (
+                              <li
+                                className="string-list-row"
+                                key={`v4:${entry.key}:${entryIndex}`}
+                              >
+                                <span className="string-key">{entry.key}</span>
+                                <pre className="string-value">
+                                  {`x=${formatNumberValue(entry.x)}, y=${formatNumberValue(entry.y)}, z=${formatNumberValue(entry.z)}, w=${formatNumberValue(entry.w)}`}
+                                </pre>
+                              </li>
+                            ))}
+                          </ul>
+                        </>
+                      ) : null}
+                      {record.referenceCategories.length > 0 ? (
+                        <>
+                          <h4>参照カテゴリ</h4>
+                          <ul className="string-list">
+                            {record.referenceCategories.map(
+                              (referenceCategory, categoryIndex) => (
+                                <li
+                                  className="string-list-row"
+                                  key={`ref:${referenceCategory.name}:${categoryIndex}`}
+                                >
+                                  <span className="string-key">
+                                    {referenceCategory.name}
+                                  </span>
+                                  <pre className="string-value">
+                                    {referenceCategory.references.length === 0
+                                      ? '(参照なし)'
+                                      : referenceCategory.references
+                                          .map(
+                                            (reference) =>
+                                              `${reference.targetId} (v0=${reference.value0}, v1=${reference.value1}, v2=${reference.value2})`,
+                                          )
+                                          .join('\n')}
+                                  </pre>
+                                </li>
+                              ),
+                            )}
+                          </ul>
+                        </>
+                      ) : null}
+                      {record.values.instances.length > 0 ? (
+                        <>
+                          <h4>インスタンス</h4>
+                          <ul className="string-list">
+                            {record.values.instances.map(
+                              (entry, entryIndex) => (
+                                <li
+                                  className="string-list-row"
+                                  key={`instance:${entry.key}:${entryIndex}`}
+                                >
+                                  <span className="string-key">
+                                    {entry.key}
+                                  </span>
+                                  <pre className="string-value">
+                                    {[
+                                      `target=${entry.targetId}`,
+                                      `values=${entry.values
+                                        .map(formatNumberValue)
+                                        .join(', ')}`,
+                                      entry.states.length > 0
+                                        ? `states=${entry.states.join(', ')}`
+                                        : '',
+                                    ]
+                                      .filter((part) => part.length > 0)
+                                      .join('\n')}
+                                  </pre>
+                                </li>
+                              ),
+                            )}
+                          </ul>
+                        </>
+                      ) : null}
                     </div>
                   ) : null}
                 </article>

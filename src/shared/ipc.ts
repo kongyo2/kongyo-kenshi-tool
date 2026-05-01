@@ -3,6 +3,7 @@ import { modProjectSchema } from './models.ts';
 
 export const loadModsRequestSchema = z.object({
   paths: z.array(z.string()).min(1),
+  referencePaths: z.array(z.string()).default([]),
 });
 
 export const exportModMarkdownRequestSchema = z.object({

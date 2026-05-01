@@ -8,6 +8,8 @@ interface LoaderPanelProps {
   onDrop: DragEventHandler<HTMLDivElement>;
   onPickFiles: () => void;
   onPickFolders: () => void;
+  onPickReferenceFolders: () => void;
+  referencePathCount: number;
   setDragging: (value: boolean) => void;
 }
 
@@ -17,6 +19,8 @@ export const LoaderPanel = ({
   onDrop,
   onPickFiles,
   onPickFolders,
+  onPickReferenceFolders,
+  referencePathCount,
   setDragging,
 }: LoaderPanelProps) => (
   <section className="loader-panel">
@@ -59,7 +63,21 @@ export const LoaderPanel = ({
           <FolderIcon height="16" width="16" />
           フォルダを選択
         </button>
+        <button
+          className="secondary-button"
+          disabled={isBusy}
+          onClick={onPickReferenceFolders}
+          type="button"
+        >
+          <FolderIcon height="16" width="16" />
+          参照フォルダ
+        </button>
       </div>
+      {referencePathCount > 0 ? (
+        <p className="reference-status">
+          参照フォルダ {referencePathCount} 件を使用します。
+        </p>
+      ) : null}
     </div>
     <ul className="loader-tips">
       <li>ドラッグ&ドロップはファイルのみ対応です。フォルダはボタンから選択してください。</li>

@@ -191,7 +191,9 @@ const eventTriggerLabels: Record<number, string> = {
   2: 'EventTriggerEnum.EV_ANNOUNCEMENT',
   3: 'EventTriggerEnum.EV_I_SEE_NEUTRAL_SQUAD',
   4: 'EventTriggerEnum.EV_I_SEE_RAGDOLL',
+  5: 'EventTriggerEnum.EV_______',
   6: 'EventTriggerEnum.EV_SOUND_THE_ALARM',
+  7: 'EventTriggerEnum.EV_I_________',
   8: 'EventTriggerEnum.EV_THIEF_CAUGHT_STEALING_FROM_ME',
   9: 'EventTriggerEnum.EV_SHOO_FROM_MY_BUILDING',
   10: 'EventTriggerEnum.EV_MARKED_FOR_DEATH',
@@ -262,6 +264,87 @@ const eventTriggerLabels: Record<number, string> = {
   75: 'EventTriggerEnum.EV_MAX',
 };
 
+// Extracted by reflecting forgotten construction set.exe:
+// DialogTranslation.getReadableNameForEvent(Int32).
+const eventTriggerDisplayNames: Record<number, string> = {
+  0: 'None',
+  1: 'Player Talk To Me',
+  2: 'Announcement',
+  3: 'I See Neutral Squad',
+  4: 'I See Ragdoll',
+  5: '(blank placeholder)',
+  6: 'Sound The Alarm',
+  7: 'I (blank placeholder)',
+  8: 'Thief Caught Stealing From Me',
+  9: 'Shoo From My Building',
+  10: 'Marked For Death',
+  11: 'Screaming Torture',
+  12: 'Bar Talk',
+  13: 'Unlock My Cage Or Shackles',
+  14: 'Unlock My Cage Attempt',
+  15: 'I Defeated Squad',
+  16: 'Launch Attack',
+  17: 'Intruder Found',
+  18: 'Healing Other Start',
+  19: 'Being Healed Start',
+  20: 'Healing Other Finished',
+  21: 'Being Healed Finished',
+  22: 'Firstaid Kit Empty',
+  23: 'Get Up Peace',
+  24: 'Get Up Fight',
+  25: 'Get Up Unneccessary Fight',
+  26: 'Harrassment Shouts',
+  27: 'I See Animal Squad',
+  28: 'Speech Interrupted Attacked By Target',
+  29: 'Speech Interrupted Attacked By Strangers',
+  30: 'Contract Job Ended',
+  31: 'Betrayal',
+  32: 'Looting Weapon Only',
+  33: 'Looting Everything',
+  34: 'I See Uniform Imposter',
+  35: 'Introducing New Slave',
+  36: 'Escaping Slave Spotted',
+  37: 'Recaptured A Slave',
+  38: 'Shout At Slave Worker',
+  39: 'Slave Delivery',
+  40: 'Escaped Ex Slave Spotted',
+  41: 'Witness Generic Assault',
+  42: 'Witness Looting Ally',
+  43: 'Witness Thief Or Lockpick',
+  44: 'Bounty Spotted',
+  45: 'Escaped Prisoner Spotted',
+  46: 'Prisoner Free To Go',
+  47: 'Almost Woke Up',
+  48: 'Enter Biome',
+  49: 'Enter Town',
+  50: 'Squad Broken',
+  51: 'Bought Me From Slavery',
+  52: 'Eating Something Sounds',
+  53: 'Worshiping Something',
+  54: 'Slave Escape Opportunity Savior',
+  55: 'Slave Escape Opportunity Alone',
+  56: 'Assassination Failed',
+  57: 'Eating My Crops',
+  58: 'Kidnapping My Ally',
+  59: 'Using My Training Equipment',
+  60: 'Give Up Chase',
+  61: 'Acid Feet',
+  62: 'Acid Rain',
+  63: 'Acid Water',
+  64: 'Windy',
+  65: 'Poison Gas',
+  66: 'I See Enemy Player',
+  67: 'I See Ally Player',
+  68: 'I See Illegal Player Building',
+  69: 'Burning',
+  70: 'Lost Leg',
+  71: 'Lost Arm',
+  72: 'I See Player Nice Building',
+  73: 'Taken Over Player Town',
+  74: 'Crowd Triggered',
+  75: 'Max',
+};
+
 // Paraphrased from the FCS enum comments. Numeric keys follow the real FCS executable enum values.
 const eventTriggerDescriptions: Record<number, string> = {
   0: 'no event trigger',
@@ -269,7 +352,9 @@ const eventTriggerDescriptions: Record<number, string> = {
   2: 'announcement event; marked unused in FCS comments',
   3: 'speaker sees a neutral NPC squad; repeats often',
   4: 'speaker sees a knocked-out or ragdoll target; repeats often',
+  5: 'blank placeholder retained by the FCS executable',
   6: 'alarm event; marked unused in FCS comments',
+  7: 'blank placeholder retained by the FCS executable',
   8: 'speaker personally catches a thief stealing',
   9: 'speaker tells target to leave their building',
   10: 'speaker is marked for death; no dialogue target',
@@ -1180,14 +1265,17 @@ const formatIntegerValue = (key: string, value: number, recordType?: number) => 
 
 const formatEventTriggerValue = (value: number) => {
   const label = eventTriggerLabels[value];
+  const displayName = eventTriggerDisplayNames[value];
   const description = eventTriggerDescriptions[value];
+  const labelPart =
+    label && displayName ? `${displayName} / ${label}` : label ?? displayName;
 
-  if (label && description) {
-    return `${value} (${label}: ${description})`;
+  if (labelPart && description) {
+    return `${value} (${labelPart}: ${description})`;
   }
 
-  if (label) {
-    return `${value} (${label})`;
+  if (labelPart) {
+    return `${value} (${labelPart})`;
   }
 
   return String(value);
@@ -1276,6 +1364,9 @@ const getReferences = (record: InspectorRecord, name: string) =>
 
 const getStringValue = (record: InspectorRecord, key: string) =>
   record.strings.find((entry) => entry.key === key)?.value ?? '';
+
+const getIntValue = (record: InspectorRecord, key: string) =>
+  record.values.ints.find((entry) => entry.key === key)?.value;
 
 const getDialogRelevantRecords = (records: readonly InspectorRecord[]) =>
   records.filter((record) =>
@@ -1394,6 +1485,8 @@ const formatFocusedPrimitiveFields = (record: InspectorRecord) => {
     .join(' · ');
 };
 
+const unsetReferenceValue = 2_147_483_647;
+
 const formatReferenceValue = (
   key: 'v0' | 'v1' | 'v2',
   value: number,
@@ -1401,6 +1494,43 @@ const formatReferenceValue = (
 ) => {
   if (categoryName === 'dialogs' && key === 'v0') {
     return `${key}=${formatEventTriggerValue(value)}`;
+  }
+
+  if (
+    (categoryName === 'conditions' || categoryName === 'effects') &&
+    key === 'v0'
+  ) {
+    if (value === unsetReferenceValue) {
+      return `${key}=value unset`;
+    }
+
+    return `${key}=value ${value}`;
+  }
+
+  if (categoryName === 'AI contract' && key === 'v0') {
+    return `${key}=hours ${value}`;
+  }
+
+  if (categoryName === 'trigger campaign') {
+    if (key === 'v0') {
+      return `${key}=min hours ${value}`;
+    }
+
+    if (key === 'v1') {
+      return `${key}=max hours ${value}`;
+    }
+
+    if (key === 'v2') {
+      return `${key}=chance% ${value}`;
+    }
+  }
+
+  if (categoryName === 'lines' && key === 'v0') {
+    if (value === unsetReferenceValue) {
+      return `${key}=line weight/chance unset`;
+    }
+
+    return `${key}=line weight/chance ${value}`;
   }
 
   return `${key}=${value}`;
@@ -1512,6 +1642,7 @@ const renderDialogActionReferences = (
   label: string,
   references: readonly Reference[],
   recordById: ReadonlyMap<string, InspectorRecord>,
+  categoryName: 'conditions' | 'effects',
   indent = '',
 ) => {
   if (references.length === 0) {
@@ -1523,11 +1654,16 @@ const renderDialogActionReferences = (
   for (const reference of references) {
     const actionRecord = recordById.get(reference.targetId);
     lines.push(
-      `${indent}  - ${formatResolvedReference(reference, recordById)}`,
+      `${indent}  - ${formatResolvedReference(reference, recordById, categoryName)}`,
     );
 
     if (!actionRecord) {
       continue;
+    }
+
+    const summary = formatDialogActionSummary(actionRecord, reference);
+    if (summary.length > 0) {
+      lines.push(`${indent}    - Summary: ${summary}`);
     }
 
     const fields = formatPrimitiveFields(actionRecord);
@@ -1552,6 +1688,153 @@ const renderDialogActionReferences = (
   }
 };
 
+const getFriendlyEnumName = (qualifiedName: string) => {
+  const enumName = qualifiedName.includes('.')
+    ? qualifiedName.slice(qualifiedName.lastIndexOf('.') + 1)
+    : qualifiedName;
+  return enumName
+    .replace(/^(?:DA|DC|DR|EV|T|OT)_/, '')
+    .replace(/^NULL_NULL_____/, '')
+    .replace(/_/g, ' ')
+    .toLocaleLowerCase('en-US');
+};
+
+const formatDialogConditionSummary = (
+  record: InspectorRecord,
+  reference: Reference,
+) => {
+  const conditionName = getIntValue(record, 'condition name');
+  if (conditionName === undefined) {
+    return '';
+  }
+
+  const conditionLabel =
+    dialogConditionLabels[conditionName] ?? `DialogConditionEnum(${conditionName})`;
+  const who = getIntValue(record, 'who');
+  const compareBy = getIntValue(record, 'compare by');
+  const tag = getIntValue(record, 'tag');
+  const stringVar = getStringValue(record, 'stringvar');
+  const parts = [
+    `condition ${getFriendlyEnumName(conditionLabel)} (${conditionLabel})`,
+  ];
+
+  if (who !== undefined) {
+    parts.push(`who ${formatIntegerValue('who', who, record.type)}`);
+  }
+
+  if (compareBy !== undefined) {
+    parts.push(`compare ${formatIntegerValue('compare by', compareBy, record.type)}`);
+  }
+
+  if (reference.value0 !== 0 && reference.value0 !== unsetReferenceValue) {
+    parts.push(`value ${reference.value0}`);
+  }
+
+  if (tag !== undefined && tag !== 0) {
+    parts.push(`tag ${tag}`);
+  }
+
+  if (stringVar.length > 0) {
+    parts.push(`string "${escapeTableCell(stringVar)}"`);
+  }
+
+  return parts.join(' · ');
+};
+
+const formatDialogEffectSummary = (
+  record: InspectorRecord,
+  reference: Reference,
+) => {
+  const actionName = getIntValue(record, 'action name');
+  if (actionName === undefined) {
+    return '';
+  }
+
+  const actionLabel =
+    dialogActionLabels[actionName] ?? `DialogActionEnum(${actionName})`;
+  const who = getIntValue(record, 'who');
+  const parts = [
+    `effect ${getFriendlyEnumName(actionLabel)} (${actionLabel})`,
+  ];
+
+  if (who !== undefined) {
+    parts.push(`who ${formatIntegerValue('who', who, record.type)}`);
+  }
+
+  if (reference.value0 !== 0 && reference.value0 !== unsetReferenceValue) {
+    parts.push(`value ${reference.value0}`);
+  }
+
+  return parts.join(' · ');
+};
+
+const formatDialogActionSummary = (
+  record: InspectorRecord,
+  reference: Reference,
+) =>
+  formatDialogConditionSummary(record, reference) ||
+  formatDialogEffectSummary(record, reference);
+
+const formatVector3 = (value: { x: number; y: number; z: number }) =>
+  `x=${formatFloatValue(value.x)}, y=${formatFloatValue(value.y)}, z=${formatFloatValue(value.z)}`;
+
+const formatVector4 = (value: { w: number; x: number; y: number; z: number }) =>
+  `${formatVector3(value)}, w=${formatFloatValue(value.w)}`;
+
+const renderFileFields = (lines: string[], record: InspectorRecord) => {
+  if (record.values.files.length === 0) {
+    return;
+  }
+
+  lines.push('- File fields:');
+  for (const entry of record.values.files) {
+    lines.push(
+      `  - \`${escapeTableCell(entry.key)}\`: \`${escapeTableCell(entry.value)}\``,
+    );
+  }
+  lines.push('');
+};
+
+const renderVectorFields = (lines: string[], record: InspectorRecord) => {
+  if (record.values.vector3s.length === 0 && record.values.vector4s.length === 0) {
+    return;
+  }
+
+  lines.push('- Vector fields:');
+  for (const entry of record.values.vector3s) {
+    lines.push(
+      `  - \`${escapeTableCell(entry.key)}\`: ${formatVector3(entry)}`,
+    );
+  }
+  for (const entry of record.values.vector4s) {
+    lines.push(
+      `  - \`${escapeTableCell(entry.key)}\`: ${formatVector4(entry)}`,
+    );
+  }
+  lines.push('');
+};
+
+const renderInstanceFields = (lines: string[], record: InspectorRecord) => {
+  if (record.values.instances.length === 0) {
+    return;
+  }
+
+  lines.push('- Instance fields:');
+  for (const entry of record.values.instances) {
+    const values = entry.values
+      .map((value) => formatFloatValue(value))
+      .join(', ');
+    const statePart =
+      entry.states.length === 0
+        ? ''
+        : ` · states: ${entry.states.map(escapeTableCell).join(', ')}`;
+    lines.push(
+      `  - \`${escapeTableCell(entry.key)}\` -> \`${escapeTableCell(entry.targetId)}\` · values: ${values}${statePart}`,
+    );
+  }
+  lines.push('');
+};
+
 const renderNonDialogRecordSupplement = (
   lines: string[],
   record: InspectorRecord,
@@ -1568,6 +1851,10 @@ const renderNonDialogRecordSupplement = (
     lines.push('');
   }
 
+  renderFileFields(lines, record);
+  renderVectorFields(lines, record);
+  renderInstanceFields(lines, record);
+
   if (hasReferenceDetails(record)) {
     lines.push('- References:');
     renderGenericReferenceCategories(lines, record, recordById, [], '  ');
@@ -1583,6 +1870,28 @@ const collectDeclaredDependencies = (mods: readonly LoadedMod[]) =>
 
 const collectDeclaredReferences = (mods: readonly LoadedMod[]) =>
   uniquePreserveOrder(mods.flatMap((mod) => mod.header.references));
+
+const getTargetMods = (project: ModProject) =>
+  project.mods.filter((mod) => mod.role === 'target');
+
+const getReferenceMods = (project: ModProject) =>
+  project.mods.filter((mod) => mod.role === 'reference');
+
+const getLookupInspectorRecords = (project: ModProject) => [
+  ...project.contextRecords,
+  ...project.inspectorRecords,
+];
+
+const getLookupDialogRecords = (
+  project: ModProject,
+  targetDialogRecords: readonly DialogRecord[],
+) => {
+  const contextDialogRecords = project.contextTextRecords.filter(
+    (record): record is DialogRecord => record.kind === 'dialog',
+  );
+
+  return [...contextDialogRecords, ...targetDialogRecords];
+};
 
 const normalizeModName = (value: string) => value.replace(/\.mod$/i, '');
 
@@ -1724,6 +2033,8 @@ const countIdSources = (records: readonly InspectorRecord[]) => {
 
 const renderHeader = (project: ModProject) => {
   const totalRecords = project.inspectorRecords.length;
+  const targetMods = getTargetMods(project);
+  const referenceMods = getReferenceMods(project);
   const stringStats = summarizeStringRecords(project.inspectorRecords);
   const dialogRecords = project.textRecords.filter(
     (record): record is DialogRecord => record.kind === 'dialog',
@@ -1738,12 +2049,19 @@ const renderHeader = (project: ModProject) => {
   const lines: string[] = [];
   lines.push('# Kenshi Mod Markdown Export');
   lines.push('');
-  lines.push(
-    'This file is a merged Markdown dump of all loaded Kenshi `.mod` files,',
-  );
-  lines.push(
-    'formatted for human review and LLM ingestion.',
-  );
+  if (referenceMods.length > 0) {
+    lines.push(
+      'This file is a target-focused Markdown dump of the selected Kenshi `.mod` files,',
+    );
+    lines.push(
+      'with reference context loaded only for resolving names, dialogue links, and cross-mod relationships.',
+    );
+  } else {
+    lines.push(
+      'This file is a merged Markdown dump of all loaded Kenshi `.mod` files,',
+    );
+    lines.push('formatted for human review and LLM ingestion.');
+  }
   lines.push('');
   lines.push('## File Summary');
   lines.push('');
@@ -1781,8 +2099,14 @@ const renderHeader = (project: ModProject) => {
   lines.push('');
   lines.push('### Metrics');
   lines.push(`- Source project: **${project.sourceModName}**`);
-  lines.push(`- Loaded mods: **${formatNumber(project.mods.length)}**`);
-  lines.push(`- Total records: **${formatNumber(totalRecords)}**`);
+  lines.push(`- Target mods: **${formatNumber(targetMods.length)}**`);
+  if (referenceMods.length > 0) {
+    lines.push(`- Reference mods: **${formatNumber(referenceMods.length)}**`);
+    lines.push(
+      `- Reference records available for resolution: **${formatNumber(project.contextRecords.length)}**`,
+    );
+  }
+  lines.push(`- Target records: **${formatNumber(totalRecords)}**`);
   lines.push(`- New records: **${formatNumber(changeCounts.get('New') ?? 0)}**`);
   lines.push(
     `- Changed records: **${formatNumber(changeCounts.get('Changed') ?? 0)}**`,
@@ -1809,7 +2133,7 @@ const renderHeader = (project: ModProject) => {
     `- Omitted empty dialog variants: **${formatNumber(dialogStats.omittedEmptyTextCount)}**`,
   );
   lines.push(
-    `- Declared dependencies: **${formatNumber(collectDeclaredDependencies(project.mods).length)}**`,
+    `- Declared dependencies: **${formatNumber(collectDeclaredDependencies(targetMods).length)}**`,
   );
   lines.push('');
 
@@ -1817,16 +2141,21 @@ const renderHeader = (project: ModProject) => {
 };
 
 const renderNavigation = (project: ModProject) => {
+  const targetMods = getTargetMods(project);
   const lines: string[] = [];
   lines.push('## Navigation');
   lines.push('');
   lines.push('- [Directory Structure](#directory-structure)');
 
-  if (collectDeclaredDependencies(project.mods).length > 0) {
+  if (getReferenceMods(project).length > 0) {
+    lines.push('- [Reference Context](#reference-context)');
+  }
+
+  if (collectDeclaredDependencies(targetMods).length > 0) {
     lines.push('- [Declared Dependencies](#declared-dependencies)');
   }
 
-  if (collectDeclaredReferences(project.mods).length > 0) {
+  if (collectDeclaredReferences(targetMods).length > 0) {
     lines.push('- [Declared References](#declared-references)');
   }
 
@@ -1854,17 +2183,59 @@ const renderNavigation = (project: ModProject) => {
 };
 
 const renderStructure = (project: ModProject) => {
+  const targetMods = getTargetMods(project);
+  const referenceMods = getReferenceMods(project);
   const lines: string[] = [];
   lines.push('## Directory Structure');
   lines.push('');
   lines.push('```text');
   lines.push(`${project.sourceModName}/`);
-  for (const mod of project.mods) {
+  lines.push('  target/');
+  for (const mod of targetMods) {
     lines.push(
-      `  ${mod.fileName}  (${pluralSuffix('record', mod.recordCount)})`,
+      `    ${mod.fileName}  (${pluralSuffix('record', mod.recordCount)})`,
     );
   }
+  if (referenceMods.length > 0) {
+    lines.push('  reference-context/');
+    for (const mod of referenceMods) {
+      lines.push(
+        `    ${mod.fileName}  (${pluralSuffix('record', mod.recordCount)})`,
+      );
+    }
+  }
   lines.push('```');
+  lines.push('');
+  return lines.join('\n');
+};
+
+const renderReferenceContext = (project: ModProject) => {
+  const referenceMods = getReferenceMods(project);
+  if (referenceMods.length === 0) {
+    return '';
+  }
+
+  const lines: string[] = [];
+  lines.push('## Reference Context');
+  lines.push('');
+  lines.push(
+    'Reference mods are not rendered as target content. They are loaded so references from the selected mod can resolve to readable names, types, dialogue text, conditions, and effects.',
+  );
+  lines.push('');
+  lines.push('| Mod | Records | Text records | Dependencies |');
+  lines.push('| --- | ---: | ---: | --- |');
+  for (const mod of referenceMods) {
+    const textRecordCount = project.contextTextRecords.filter(
+      (record) => record.modName === normalizeModName(mod.fileName),
+    ).length;
+    lines.push(
+      `| ${escapeTableCell(mod.fileName)} | ${formatNumber(mod.recordCount)} | ${formatNumber(textRecordCount)} | ${
+        mod.header.dependencies.length === 0
+          ? '—'
+          : mod.header.dependencies.map(escapeTableCell).join(', ')
+      } |`,
+    );
+  }
   lines.push('');
   return lines.join('\n');
 };
@@ -1943,7 +2314,10 @@ const renderRecordChangeBreakdown = (
   }
 
   const loadedModNames = new Set(
-    project.mods.map((mod) => normalizeModName(mod.fileName)),
+    getTargetMods(project).map((mod) => normalizeModName(mod.fileName)),
+  );
+  const referenceModNames = new Set(
+    getReferenceMods(project).map((mod) => normalizeModName(mod.fileName)),
   );
   const changeCounts = countChangeTypes(project.inspectorRecords);
   const sourceCounts = countIdSources(project.inspectorRecords);
@@ -1970,9 +2344,12 @@ const renderRecordChangeBreakdown = (
   lines.push('| ID source | Records | Relation to loaded mod |');
   lines.push('| --- | ---: | --- |');
   for (const [source, count] of sourceCounts) {
-    const relation = loadedModNames.has(normalizeModName(source))
-      ? 'loaded mod'
-      : 'external/base/renamed source';
+    const normalizedSource = normalizeModName(source);
+    const relation = loadedModNames.has(normalizedSource)
+      ? 'target mod'
+      : referenceModNames.has(normalizedSource)
+        ? 'reference context'
+        : 'external/base/renamed source';
     lines.push(
       `| ${escapeTableCell(source)} | ${formatNumber(count)} | ${relation} |`,
     );
@@ -1992,6 +2369,9 @@ const renderMods = (mods: readonly LoadedMod[]) => {
     lines.push('');
     lines.push('| Field | Value |');
     lines.push('| --- | --- |');
+    lines.push(
+      `| Role | ${mod.role === 'target' ? 'target export' : 'reference context'} |`,
+    );
     lines.push(`| File type | ${mod.header.fileType} |`);
     lines.push(`| Version | ${mod.header.version} |`);
     lines.push(
@@ -2059,10 +2439,13 @@ const renderOtherFieldCounts = (counts: InspectorRecord['counts']) => {
 const renderTypeDescriptor = (type: number) =>
   `${type} · ${getItemTypeEnglishName(type)} · ${getItemTypeLabel(type)}`;
 
-const renderStringBearingRecords = (records: readonly InspectorRecord[]) => {
+const renderStringBearingRecords = (
+  records: readonly InspectorRecord[],
+  lookupRecords: readonly InspectorRecord[] = records,
+) => {
   const stringStats = summarizeStringRecords(records);
   const stringRecords = records.filter((record) => record.strings.length > 0);
-  const recordById = buildRecordIndex(records);
+  const recordById = buildRecordIndex(lookupRecords);
   const lines: string[] = [];
   lines.push('## String-bearing Records');
   lines.push('');
@@ -2171,13 +2554,14 @@ const getReferenceOnlyRecords = (records: readonly InspectorRecord[]) =>
 
 const renderReferenceBearingRecords = (
   records: readonly InspectorRecord[],
+  lookupRecords: readonly InspectorRecord[] = records,
 ) => {
   const referenceOnlyRecords = getReferenceOnlyRecords(records);
   if (referenceOnlyRecords.length === 0) {
     return '';
   }
 
-  const recordById = buildRecordIndex(records);
+  const recordById = buildRecordIndex(lookupRecords);
   const byMod = new Map<string, InspectorRecord[]>();
   for (const record of referenceOnlyRecords) {
     const modName = normalizeModName(record.modName);
@@ -2338,6 +2722,121 @@ const collectReferencedDialogLineIds = (
   return referencedIds;
 };
 
+const renderDialogEventBreakdown = (references: readonly Reference[]) => {
+  const counts = new Map<number, number>();
+  for (const reference of references) {
+    counts.set(reference.value0, (counts.get(reference.value0) ?? 0) + 1);
+  }
+
+  return Array.from(counts.entries())
+    .sort((left, right) => right[1] - left[1] || left[0] - right[0])
+    .map(
+      ([eventValue, count]) =>
+        `${formatEventTriggerValue(eventValue)}: ${pluralSuffix('dialog', count)}`,
+    )
+    .join(' · ');
+};
+
+const countDialogPackageEvents = (records: readonly InspectorRecord[]) => {
+  const counts = new Map<
+    number,
+    { dialogReferences: number; packageIds: Set<string> }
+  >();
+
+  for (const record of records) {
+    if (record.type !== dialoguePackageTypeCode) {
+      continue;
+    }
+
+    for (const reference of getReferences(record, 'dialogs')) {
+      const existing =
+        counts.get(reference.value0) ?? {
+          dialogReferences: 0,
+          packageIds: new Set<string>(),
+        };
+      existing.dialogReferences += 1;
+      existing.packageIds.add(record.stringId);
+      counts.set(reference.value0, existing);
+    }
+  }
+
+  return Array.from(counts.entries()).sort(
+    (left, right) =>
+      right[1].dialogReferences - left[1].dialogReferences ||
+      left[0] - right[0],
+  );
+};
+
+const countDialogLineIntegerField = (
+  records: readonly InspectorRecord[],
+  key: string,
+) => {
+  const counts = new Map<number, number>();
+  for (const record of records) {
+    if (record.type !== dialogueLineTypeCode) {
+      continue;
+    }
+
+    const value = getIntValue(record, key);
+    if (value !== undefined) {
+      counts.set(value, (counts.get(value) ?? 0) + 1);
+    }
+  }
+
+  return Array.from(counts.entries()).sort((left, right) => right[1] - left[1]);
+};
+
+const renderDialogMechanicsSummary = (records: readonly InspectorRecord[]) => {
+  const eventCounts = countDialogPackageEvents(records);
+  const speakerCounts = countDialogLineIntegerField(records, 'speaker');
+  const repetitionCounts = countDialogLineIntegerField(
+    records,
+    'repetition limit',
+  );
+  const lines: string[] = [];
+
+  if (eventCounts.length > 0) {
+    lines.push('#### Event Trigger Breakdown');
+    lines.push('');
+    lines.push('| FCS event | Package refs | Packages |');
+    lines.push('| --- | ---: | ---: |');
+    for (const [eventValue, count] of eventCounts) {
+      lines.push(
+        `| ${escapeTableCell(formatEventTriggerValue(eventValue))} | ${formatNumber(count.dialogReferences)} | ${formatNumber(count.packageIds.size)} |`,
+      );
+    }
+    lines.push('');
+  }
+
+  if (speakerCounts.length > 0) {
+    lines.push('#### Dialogue Line Speakers');
+    lines.push('');
+    lines.push('| Speaker | Lines |');
+    lines.push('| --- | ---: |');
+    for (const [speaker, count] of speakerCounts) {
+      lines.push(
+        `| ${escapeTableCell(formatIntegerValue('speaker', speaker, dialogueLineTypeCode))} | ${formatNumber(count)} |`,
+      );
+    }
+    lines.push('');
+  }
+
+  if (repetitionCounts.length > 0) {
+    lines.push('#### Repetition Limits');
+    lines.push('');
+    lines.push('| Limit | Lines |');
+    lines.push('| --- | ---: |');
+    for (const [limit, count] of repetitionCounts) {
+      lines.push(
+        `| ${escapeTableCell(formatIntegerValue('repetition limit', limit, dialogueLineTypeCode))} | ${formatNumber(count)} |`,
+      );
+    }
+    lines.push('');
+  }
+
+  return lines.join('\n');
+};
+
 const renderLineTexts = (
   lines: string[],
   dialogText: DialogRecord | undefined,
@@ -2418,6 +2917,7 @@ const renderDialogueLineNode = (
     'Conditions',
     getReferences(lineRecord, 'conditions'),
     recordById,
+    'conditions',
     `${indent}  `,
   );
   renderDialogActionReferences(
@@ -2425,6 +2925,7 @@ const renderDialogueLineNode = (
     'Effects',
     getReferences(lineRecord, 'effects'),
     recordById,
+    'effects',
     `${indent}  `,
   );
 
@@ -2507,6 +3008,7 @@ const renderDialogueRecord = (
     'Conditions',
     getReferences(record, 'conditions'),
     recordById,
+    'conditions',
   );
   renderGenericReferenceCategories(
     lines,
@@ -2567,13 +3069,14 @@ const renderDialogStructures = (
     return '';
   }
 
-  const recordById = buildRecordIndex(project.inspectorRecords);
+  const lookupRecords = getLookupInspectorRecords(project);
+  const recordById = buildRecordIndex(lookupRecords);
   const dialogTextById = new Map<string, DialogRecord>();
-  for (const record of dialogRecords) {
+  for (const record of getLookupDialogRecords(project, dialogRecords)) {
     dialogTextById.set(record.stringId, record);
   }
 
-  const referencedLineIds = collectReferencedDialogLineIds(project.inspectorRecords);
+  const referencedLineIds = collectReferencedDialogLineIds(lookupRecords);
   const byMod = groupInspectorRecordsByMod(dialogRelevantRecords);
   const lines: string[] = [];
 
@@ -2583,6 +3086,12 @@ const renderDialogStructures = (
     'FCS dialog model used here: `DIALOGUE_PACKAGE.dialogs` points to dialogue roots; `DIALOGUE.lines` and `DIALOGUE_LINE.lines` point to spoken lines and replies; `conditions` and `effects` point to `DIALOG_ACTION` records. Reference values are preserved as `v0/v1/v2`, with known FCS enum labels added where the source field is understood.',
   );
   lines.push('');
+
+  const mechanicsSummary = renderDialogMechanicsSummary(dialogRelevantRecords);
+  if (mechanicsSummary.length > 0) {
+    lines.push(mechanicsSummary);
+    lines.push('');
+  }
 
   for (const mod of project.mods) {
     const modName = normalizeModName(mod.fileName);
@@ -2635,6 +3144,9 @@ const renderDialogStructures = (
         if (dialogReferences.length > 0) {
           lines.push(
             `  - Dialogs: ${pluralSuffix('reference', dialogReferences.length)}${formatReferenceCategoryHint('dialogs')}`,
+          );
+          lines.push(
+            `  - Events: ${renderDialogEventBreakdown(dialogReferences)}`,
           );
           for (const reference of dialogReferences) {
             lines.push(
@@ -2880,18 +3392,21 @@ const renderExtractedTextRecords = (project: ModProject) => {
 };
 
 export const renderProjectMarkdown = (project: ModProject): string => {
+  const targetMods = getTargetMods(project);
+  const lookupRecords = getLookupInspectorRecords(project);
   const sections: string[] = [
     renderHeader(project),
     renderNavigation(project),
     renderStructure(project),
-    renderDependencies(project.mods),
+    renderReferenceContext(project),
+    renderDependencies(targetMods),
     renderCategoryBreakdown(project.inspectorRecords),
     renderTypeBreakdown(project.inspectorRecords),
     renderRecordChangeBreakdown(project),
     renderMods(project.mods),
     renderExtractedTextRecords(project),
-    renderStringBearingRecords(project.inspectorRecords),
-    renderReferenceBearingRecords(project.inspectorRecords),
+    renderStringBearingRecords(project.inspectorRecords, lookupRecords),
+    renderReferenceBearingRecords(project.inspectorRecords, lookupRecords),
   ];
 
   return sections.filter((section) => section.length > 0).join('\n') + '\n';

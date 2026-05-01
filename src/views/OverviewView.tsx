@@ -23,6 +23,8 @@ export const OverviewView = ({
   const breakdown = buildCategoryBreakdown(project.inspectorRecords);
   const totalRecords = project.inspectorRecords.length;
   const defaultFileName = `${project.sourceModName}_mod_data.md`;
+  const targetModCount = project.mods.filter((mod) => mod.role === 'target').length;
+  const referenceModCount = project.mods.length - targetModCount;
 
   return (
     <div className="view overview-view">
@@ -31,8 +33,11 @@ export const OverviewView = ({
           <p className="eyebrow">Markdown export</p>
           <h1 className="view-title">LLM向けmodダンプ</h1>
           <p className="view-subtitle">
-            読み込んだ {formatNumber(project.mods.length)} 個の mod を解析し、
+            対象 {formatNumber(project.inspectorRecords.length)} レコードを解析し、
             Kenshi の内容を Markdown へまとめます。
+            {project.contextRecords.length > 0
+              ? ` 参照 ${formatNumber(project.contextRecords.length)} レコードは解決用に使います。`
+              : ''}
           </p>
         </div>
       </div>
@@ -65,12 +70,13 @@ export const OverviewView = ({
           </span>
         </article>
         <article className="stat-card">
-          <span className="stat-label">読み込みmod数</span>
+          <span className="stat-label">mod数</span>
           <strong className="stat-value">
-            {formatNumber(project.mods.length)}
+            {formatNumber(targetModCount)}
           </strong>
           <span className="stat-sub">
-            依存関係 {formatNumber(project.dependencies.length)} 件
+            参照 {formatNumber(referenceModCount)} / 依存関係{' '}
+            {formatNumber(project.dependencies.length)} 件
           </span>
         </article>
       </section>

@@ -106,15 +106,10 @@ const collectModPaths = async (pathsToScan: string[]) => {
   return uniquePreserveOrder(collectedPaths);
 };
 
-const parseProject = async (input: LoadModsRequest) => {
-  const modPaths = await collectModPaths(input.paths);
-
-  if (modPaths.length === 0) {
-    throw new Error('modファイルが見つかりませんでした。');
-  }
-
-  const declaredDependencies: string[] = [];
-  const loadedModNames: string[] = [];
+const parseModFiles = async (
+  modPaths: readonly string[],
+  role: LoadedMod['role'],
+) => {
   const textRecords: TextRecord[] = [];
   const inspectorRecords: InspectorRecord[] = [];
   const mods: LoadedMod[] = [];
@@ -124,8 +119,6 @@ const parseProject = async (input: LoadModsRequest) => {
     const modName = path.basename(modPath, '.mod');
     const parsed = parseMod(fileBuffer, modName, modPath);
 
-    loadedModNames.push(modName);
-    declaredDependencies.push(...parsed.header.dependencies);
     textRecords.push(...parsed.textRecords);
     inspectorRecords.push(...parsed.inspectorRecords);
     mods.push({
@@ -133,17 +126,42 @@ const parseProject = async (input: LoadModsRequest) => {
       filePath: modPath,
       header: parsed.header,
       recordCount: parsed.inspectorRecords.length,
+      role,
     });
   }
 
-  const uniqueDependencies = uniquePreserveOrder(declaredDependencies);
-
   return {
-    dependencies: uniqueDependencies,
     inspectorRecords,
     mods,
-    sourceModName: loadedModNames[0] ?? 'unknown',
     textRecords,
+  };
+};
+
+const parseProject = async (input: LoadModsRequest) => {
+  const modPaths = await collectModPaths(input.paths);
+
+  if (modPaths.length === 0) {
+    throw new Error('modファイルが見つかりませんでした。');
+  }
+
+  const referenceModPaths = uniquePreserveOrder(
+    await collectModPaths(input.referencePaths),
+  ).filter((modPath) => !modPaths.includes(modPath));
+  const targetProject = await parseModFiles(modPaths, 'target');
+  const referenceProject = await parseModFiles(referenceModPaths, 'reference');
+  const uniqueDependencies = uniquePreserveOrder(
+    targetProject.mods.flatMap((mod) => mod.header.dependencies),
+  );
+
+  return {
+    contextRecords: referenceProject.inspectorRecords,
+    contextTextRecords: referenceProject.textRecords,
+    dependencies: uniqueDependencies,
+    inspectorRecords: targetProject.inspectorRecords,
+    mods: [...targetProject.mods, ...referenceProject.mods],
+    sourceModName:
+      targetProject.mods[0] ? path.basename(targetProject.mods[0].fileName, '.mod') : 'unknown',
+    textRecords: targetProject.textRecords,
   };
 };
 

@@ -603,6 +603,12 @@ code,
   margin-top: 4px;
 }
 
+.reference-status {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.86rem;
+}
+
 .loader-tips {
   display: grid;
   gap: 8px;
@@ -1258,6 +1264,13 @@ code,
 .mod-card-name {
   margin: 0;
   font-size: 1.1rem;
+}
+
+.mod-card-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
 }
 
 .mod-card-type {
