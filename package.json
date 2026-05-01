@@ -1,6 +1,6 @@
 {
   "name": "kongyo-kenshi-tool",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Kenshi .mod を LLM向けMarkdownへ変換する Windows用デスクトップツール",
   "private": true,
   "main": "dist-electron/main.js",
