@@ -700,7 +700,7 @@ code,
   list-style: none;
 }
 
-.category-item {
+.category-row {
   display: grid;
   grid-template-columns: 12px 110px minmax(0, 1fr) 60px;
   gap: 12px;
@@ -709,7 +709,7 @@ code,
   border-bottom: 1px dashed rgba(255, 255, 255, 0.05);
 }
 
-.category-item:last-child {
+.category-row:last-child {
   border-bottom: 0;
 }
 
