@@ -129,7 +129,7 @@ export const OverviewView = ({
           </header>
           <ul className="category-list">
             {breakdown.map((entry) => (
-              <li className="category-item" key={entry.category}>
+              <li className="category-row" key={entry.category}>
                 <span className={`category-dot category-${entry.category}`} />
                 <span className="category-label">{entry.label}</span>
                 <span className="category-bar" aria-hidden="true">
