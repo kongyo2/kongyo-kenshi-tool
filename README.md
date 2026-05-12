@@ -1,5 +1,9 @@
 # kongyo-kenshi-tool
 
+[![CI](https://github.com/kongyo2/kongyo-kenshi-tool/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/kongyo2/kongyo-kenshi-tool/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/kongyo2/kongyo-kenshi-tool?display_name=tag&sort=semver)](https://github.com/kongyo2/kongyo-kenshi-tool/releases/latest)
+[![License: MIT](https://img.shields.io/github/license/kongyo2/kongyo-kenshi-tool)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows-blue)](https://github.com/kongyo2/kongyo-kenshi-tool/releases/latest)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/kongyo2/kongyo-kenshi-tool)
 
 Kenshi の `.mod` を解析し、LLM に渡しやすい Markdown に変換する Electron + React 製デスクトップツールです。
