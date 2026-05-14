@@ -1,17 +1,20 @@
 import cx from 'clsx';
 import type { DragEventHandler } from 'react';
-import { FileIcon, FolderIcon, UploadIcon } from './Icons.tsx';
+import { CloseIcon, FileIcon, FolderIcon, ReplaceIcon, UploadIcon } from './Icons.tsx';
 
 interface LoaderPanelProps {
   hasSavedVanillaPath: boolean;
   isBusy: boolean;
   isDragging: boolean;
   onApplyVanillaReference: () => void;
+  onChangeVanillaPath: () => void;
+  onClearReferencePaths: () => void;
   onDrop: DragEventHandler<HTMLDivElement>;
   onPickFiles: () => void;
   onPickFolders: () => void;
   onPickReferenceFolders: () => void;
-  referencePathCount: number;
+  onRemoveReferencePath: (path: string) => void;
+  referencePaths: readonly string[];
   setDragging: (value: boolean) => void;
   vanillaDataPath: string | null;
 }
@@ -21,11 +24,14 @@ export const LoaderPanel = ({
   isBusy,
   isDragging,
   onApplyVanillaReference,
+  onChangeVanillaPath,
+  onClearReferencePaths,
   onDrop,
   onPickFiles,
   onPickFolders,
   onPickReferenceFolders,
-  referencePathCount,
+  onRemoveReferencePath,
+  referencePaths,
   setDragging,
   vanillaDataPath,
 }: LoaderPanelProps) => (
@@ -76,7 +82,7 @@ export const LoaderPanel = ({
           type="button"
         >
           <FolderIcon height="16" width="16" />
-          参照フォルダ
+          参照フォルダを追加
         </button>
         <button
           className="secondary-button"
@@ -90,18 +96,57 @@ export const LoaderPanel = ({
           type="button"
         >
           <FolderIcon height="16" width="16" />
-          {hasSavedVanillaPath ? 'バニラ参照' : 'バニラを設定'}
+          {hasSavedVanillaPath ? 'バニラを参照に追加' : 'バニラを設定'}
         </button>
       </div>
-      {referencePathCount > 0 ? (
-        <p className="reference-status">
-          参照フォルダ {referencePathCount} 件を使用します。
+      {hasSavedVanillaPath && vanillaDataPath ? (
+        <p className="vanilla-status">
+          <span className="vanilla-status-label">バニラ data:</span>
+          <code className="vanilla-status-path">{vanillaDataPath}</code>
+          <button
+            className="vanilla-status-change"
+            disabled={isBusy}
+            onClick={onChangeVanillaPath}
+            type="button"
+          >
+            <ReplaceIcon height="12" width="12" />
+            変更
+          </button>
         </p>
       ) : null}
-      {hasSavedVanillaPath && vanillaDataPath ? (
-        <p className="reference-status">
-          バニラ data: <code>{vanillaDataPath}</code>
-        </p>
+      {referencePaths.length > 0 ? (
+        <div className="reference-list">
+          <div className="reference-list-header">
+            <span className="reference-list-title">
+              参照フォルダ {referencePaths.length} 件
+            </span>
+            <button
+              className="reference-list-clear"
+              disabled={isBusy}
+              onClick={onClearReferencePaths}
+              type="button"
+            >
+              <CloseIcon height="12" width="12" />
+              すべて解除
+            </button>
+          </div>
+          <ul className="reference-list-items">
+            {referencePaths.map((referencePath) => (
+              <li className="reference-row" key={referencePath}>
+                <code className="reference-row-path">{referencePath}</code>
+                <button
+                  aria-label="この参照を削除"
+                  className="reference-row-remove"
+                  disabled={isBusy}
+                  onClick={() => onRemoveReferencePath(referencePath)}
+                  type="button"
+                >
+                  <CloseIcon height="12" width="12" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : null}
     </div>
     <ul className="loader-tips">

@@ -1,12 +1,14 @@
 import { app, BrowserWindow, Menu, dialog, ipcMain, shell } from 'electron';
-import { lstat, readdir, readFile, writeFile } from 'node:fs/promises';
+import { access, lstat, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { z } from 'zod';
 import {
   exportModMarkdownRequestSchema,
   exportModMarkdownResponseSchema,
   loadModsRequestSchema,
   type LoadModsRequest,
+  type LoadProgress,
 } from '../src/shared/ipc.ts';
 import { parseMod } from '../src/shared/mod-format.ts';
 import { renderProjectMarkdown } from '../src/shared/mod-markdown.ts';
@@ -112,15 +114,60 @@ const collectModPaths = async (pathsToScan: string[]) => {
   return uniquePreserveOrder(collectedPaths);
 };
 
+interface CollectResult {
+  missingPaths: string[];
+  paths: string[];
+}
+
+const collectModPathsLenient = async (
+  pathsToScan: string[],
+): Promise<CollectResult> => {
+  const collectedPaths: string[] = [];
+  const missingPaths: string[] = [];
+
+  for (const currentPath of pathsToScan) {
+    try {
+      const stats = await lstat(currentPath);
+      if (stats.isDirectory()) {
+        const nestedPaths = await collectModPathsFromDirectory(currentPath);
+        collectedPaths.push(...nestedPaths);
+        continue;
+      }
+      if (stats.isFile() && isModFile(currentPath)) {
+        collectedPaths.push(currentPath);
+      }
+    } catch {
+      missingPaths.push(currentPath);
+    }
+  }
+
+  return {
+    missingPaths,
+    paths: uniquePreserveOrder(collectedPaths),
+  };
+};
+
+type ProgressReporter = (progress: LoadProgress) => void;
+
 const parseModFiles = async (
   modPaths: readonly string[],
   role: LoadedMod['role'],
+  reportProgress: ProgressReporter,
+  totalFiles: number,
+  startIndex: number,
 ) => {
   const textRecords: TextRecord[] = [];
   const inspectorRecords: InspectorRecord[] = [];
   const mods: LoadedMod[] = [];
 
+  let processed = 0;
   for (const modPath of modPaths) {
+    reportProgress({
+      current: startIndex + processed + 1,
+      currentFile: path.basename(modPath),
+      phase: role,
+      total: totalFiles,
+    });
     const fileBuffer = await readFile(modPath);
     const modName = path.parse(modPath).name;
     const parsed = parseMod(fileBuffer, modName, modPath);
@@ -134,6 +181,7 @@ const parseModFiles = async (
       recordCount: parsed.inspectorRecords.length,
       role,
     });
+    processed += 1;
   }
 
   return {
@@ -143,18 +191,35 @@ const parseModFiles = async (
   };
 };
 
-const parseProject = async (input: LoadModsRequest) => {
+const parseProject = async (
+  input: LoadModsRequest,
+  reportProgress: ProgressReporter,
+) => {
   const modPaths = await collectModPaths(input.paths);
 
   if (modPaths.length === 0) {
     throw new Error('modファイルが見つかりませんでした。');
   }
 
-  const referenceModPaths = uniquePreserveOrder(
-    await collectModPaths(input.referencePaths),
-  ).filter((modPath) => !modPaths.includes(modPath));
-  const targetProject = await parseModFiles(modPaths, 'target');
-  const referenceProject = await parseModFiles(referenceModPaths, 'reference');
+  const referenceCollection = await collectModPathsLenient(input.referencePaths);
+  const referenceModPaths = referenceCollection.paths.filter(
+    (modPath) => !modPaths.includes(modPath),
+  );
+  const totalFiles = modPaths.length + referenceModPaths.length;
+  const targetProject = await parseModFiles(
+    modPaths,
+    'target',
+    reportProgress,
+    totalFiles,
+    0,
+  );
+  const referenceProject = await parseModFiles(
+    referenceModPaths,
+    'reference',
+    reportProgress,
+    totalFiles,
+    modPaths.length,
+  );
   const uniqueDependencies = uniquePreserveOrder(
     targetProject.mods.flatMap((mod) => mod.header.dependencies),
   );
@@ -164,11 +229,21 @@ const parseProject = async (input: LoadModsRequest) => {
     contextTextRecords: referenceProject.textRecords,
     dependencies: uniqueDependencies,
     inspectorRecords: targetProject.inspectorRecords,
+    missingReferencePaths: referenceCollection.missingPaths,
     mods: [...targetProject.mods, ...referenceProject.mods],
     sourceModName:
       targetProject.mods[0] ? path.parse(targetProject.mods[0].fileName).name : 'unknown',
     textRecords: targetProject.textRecords,
   };
+};
+
+const pathExists = async (target: string) => {
+  try {
+    await access(target);
+    return true;
+  } catch {
+    return false;
+  }
 };
 
 const registerIpc = () => {
@@ -196,9 +271,14 @@ const registerIpc = () => {
     return result.canceled ? [] : result.filePaths;
   });
 
-  ipcMain.handle('mods:load', async (_event, rawInput) => {
+  ipcMain.handle('mods:load', async (event, rawInput) => {
     const input = loadModsRequestSchema.parse(rawInput);
-    return parseProject(input);
+    const sender = event.sender;
+    return parseProject(input, (progress) => {
+      if (!sender.isDestroyed()) {
+        sender.send('mods:load-progress', progress);
+      }
+    });
   });
 
   ipcMain.handle('mods:export-markdown', async (_event, rawInput) => {
@@ -220,6 +300,7 @@ const registerIpc = () => {
 
     if (dialogResult.canceled || !dialogResult.filePath) {
       return exportModMarkdownResponseSchema.parse({
+        byteCount: null,
         canceled: true,
         filePath: null,
       });
@@ -229,6 +310,7 @@ const registerIpc = () => {
     await writeFile(dialogResult.filePath, markdown, 'utf-8');
 
     return exportModMarkdownResponseSchema.parse({
+      byteCount: Buffer.byteLength(markdown, 'utf-8'),
       canceled: false,
       filePath: dialogResult.filePath,
     });
@@ -241,9 +323,13 @@ const registerIpc = () => {
     }
   });
 
-  ipcMain.handle('settings:get-vanilla-data-path', async () => {
-    const settings = await loadAppSettings();
-    return settings.vanillaDataPath;
+  ipcMain.handle('settings:get-all', async () => {
+    return loadAppSettings();
+  });
+
+  ipcMain.handle('settings:save-reference-paths', async (_event, rawInput) => {
+    const paths = z.array(z.string()).parse(rawInput);
+    await saveAppSettings({ referencePaths: paths });
   });
 
   ipcMain.handle('settings:pick-and-save-vanilla-data-path', async () => {
@@ -258,8 +344,11 @@ const registerIpc = () => {
     }
 
     const selectedPath = result.filePaths[0]!;
+    const hasGamedata = await pathExists(
+      path.join(selectedPath, 'gamedata.base'),
+    );
     const saved = await saveAppSettings({ vanillaDataPath: selectedPath });
-    return saved.vanillaDataPath;
+    return { hasGamedata, path: saved.vanillaDataPath ?? selectedPath };
   });
 };
 

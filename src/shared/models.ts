@@ -143,6 +143,7 @@ export const modProjectSchema = z.object({
   contextTextRecords: z.array(textRecordSchema).default([]),
   dependencies: z.array(z.string()),
   inspectorRecords: z.array(inspectorRecordSchema),
+  missingReferencePaths: z.array(z.string()).default([]),
   mods: z.array(loadedModSchema),
   sourceModName: z.string(),
   textRecords: z.array(textRecordSchema),

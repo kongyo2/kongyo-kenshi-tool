@@ -19,7 +19,13 @@ import { LoaderPanel } from './components/LoaderPanel.tsx';
 import { Notice, type NoticeState } from './components/Notice.tsx';
 import { Sidebar, type SidebarItem, type ViewId } from './components/Sidebar.tsx';
 import { countProjectStats } from './lib/project-stats.ts';
-import { extractDroppedPaths, formatNumber, getErrorMessage } from './lib/utils.ts';
+import {
+  extractDroppedPaths,
+  formatByteSize,
+  formatNumber,
+  getErrorMessage,
+} from './lib/utils.ts';
+import type { LoadProgress } from './shared/ipc.ts';
 import type { ModProject } from './shared/models.ts';
 import { InspectorView } from './views/InspectorView.tsx';
 import { ModsView } from './views/ModsView.tsx';
@@ -35,13 +41,32 @@ const App = () => {
   const [referencePaths, setReferencePaths] = useState<string[]>([]);
   const [vanillaDataPath, setVanillaDataPath] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<ViewId>('overview');
+  const [loadProgress, setLoadProgress] = useState<LoadProgress | null>(null);
   const [, startTransition] = useTransition();
+
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
 
   useEffect(() => {
     void (async () => {
-      const saved = await window.electronApi.getVanillaDataPath();
-      setVanillaDataPath(saved);
+      const saved = await window.electronApi.getAppSettings();
+      setVanillaDataPath(saved.vanillaDataPath);
+      setReferencePaths(saved.referencePaths);
+      setSettingsLoaded(true);
     })();
+  }, []);
+
+  useEffect(() => {
+    if (!settingsLoaded) {
+      return;
+    }
+    void window.electronApi.saveReferencePaths(referencePaths);
+  }, [referencePaths, settingsLoaded]);
+
+  useEffect(() => {
+    const unsubscribe = window.electronApi.onLoadProgress((progress) => {
+      setLoadProgress(progress);
+    });
+    return unsubscribe;
   }, []);
 
   const stats = useMemo(
@@ -62,6 +87,7 @@ const App = () => {
       }
 
       setIsLoadingProject(true);
+      setLoadProgress(null);
       setLastExportedPath(null);
       showNotice({
         kind: 'info',
@@ -77,17 +103,59 @@ const App = () => {
           setProject(loadedProject);
           setActiveView('overview');
         });
-        showNotice({
-          kind: 'success',
-          message:
-            `${formatNumber(loadedProject.mods.length)} mod / ` +
-            `${formatNumber(loadedProject.inspectorRecords.length)} レコード / ` +
-            `${formatNumber(loadedProject.textRecords.length)} 抽出テキスト` +
-            (loadedProject.contextRecords.length > 0
-              ? ` / 参照 ${formatNumber(loadedProject.contextRecords.length)} レコード`
-              : '') +
-            'を読み込みました。',
-        });
+        const emptyTargetMods = loadedProject.mods.filter(
+          (mod) => mod.role === 'target' && mod.recordCount === 0,
+        );
+        const summary =
+          `${formatNumber(loadedProject.mods.length)} mod / ` +
+          `${formatNumber(loadedProject.inspectorRecords.length)} レコード / ` +
+          `${formatNumber(loadedProject.textRecords.length)} 抽出テキスト` +
+          (loadedProject.contextRecords.length > 0
+            ? ` / 参照 ${formatNumber(loadedProject.contextRecords.length)} レコード`
+            : '') +
+          'を読み込みました。';
+
+        const warnings: string[] = [];
+        if (emptyTargetMods.length > 0) {
+          const sampleNames = emptyTargetMods
+            .slice(0, 3)
+            .map((mod) => mod.fileName)
+            .join(', ');
+          const more =
+            emptyTargetMods.length > 3
+              ? ` 他 ${formatNumber(emptyTargetMods.length - 3)} 件`
+              : '';
+          warnings.push(
+            `レコード 0 件の mod が ${formatNumber(emptyTargetMods.length)} 件: ${sampleNames}${more}`,
+          );
+        }
+        if (loadedProject.missingReferencePaths.length > 0) {
+          const samplePaths = loadedProject.missingReferencePaths
+            .slice(0, 2)
+            .join(', ');
+          const more =
+            loadedProject.missingReferencePaths.length > 2
+              ? ` 他 ${formatNumber(loadedProject.missingReferencePaths.length - 2)} 件`
+              : '';
+          warnings.push(
+            `読み込めなかった参照パスが ${formatNumber(loadedProject.missingReferencePaths.length)} 件: ${samplePaths}${more}`,
+          );
+          const missingSet = new Set(loadedProject.missingReferencePaths);
+          setReferencePaths((prev) =>
+            prev.filter((item) => !missingSet.has(item)),
+          );
+        }
+        if (warnings.length > 0) {
+          showNotice({
+            kind: 'warning',
+            message: `${summary} なお、${warnings.join(' / ')}。`,
+          });
+        } else {
+          showNotice({
+            kind: 'success',
+            message: summary,
+          });
+        }
       } catch (error) {
         showNotice({
           kind: 'error',
@@ -95,6 +163,7 @@ const App = () => {
         });
       } finally {
         setIsLoadingProject(false);
+        setLoadProgress(null);
       }
     },
     [referencePaths, showNotice],
@@ -155,21 +224,40 @@ const App = () => {
     });
   }, [showNotice]);
 
+  const handleRemoveReferencePath = useCallback(
+    (target: string) => {
+      setReferencePaths((prev) => prev.filter((item) => item !== target));
+      showNotice({
+        kind: 'info',
+        message: `参照から除外しました: ${target}`,
+      });
+    },
+    [showNotice],
+  );
+
   const handleApplyVanillaReference = useCallback(async () => {
     let targetPath = vanillaDataPath;
+    let pickedFreshly = false;
+    let hasGamedata = true;
     if (!targetPath) {
-      targetPath = await window.electronApi.pickAndSaveVanillaDataPath();
-      if (!targetPath) {
+      const pickResult = await window.electronApi.pickAndSaveVanillaDataPath();
+      if (!pickResult) {
         return;
       }
+      targetPath = pickResult.path;
       setVanillaDataPath(targetPath);
+      pickedFreshly = true;
+      hasGamedata = pickResult.hasGamedata;
     }
 
     const resolved = targetPath;
     if (referencePaths.includes(resolved)) {
       showNotice({
-        kind: 'info',
-        message: `バニラは既に参照に含まれています: ${resolved}`,
+        kind: pickedFreshly && !hasGamedata ? 'warning' : 'info',
+        message:
+          pickedFreshly && !hasGamedata
+            ? `バニラとして保存しましたが gamedata.base が見つかりません: ${resolved} (既に参照済み)`
+            : `バニラは既に参照に含まれています: ${resolved}`,
       });
       return;
     }
@@ -177,11 +265,56 @@ const App = () => {
     setReferencePaths((prev) =>
       prev.includes(resolved) ? prev : [...prev, resolved],
     );
+
+    if (pickedFreshly && !hasGamedata) {
+      showNotice({
+        kind: 'warning',
+        message: `バニラを設定して参照に追加しましたが、gamedata.base が見つかりません: ${resolved} — バニラの data フォルダか確認してください。`,
+      });
+      return;
+    }
+
     showNotice({
       kind: 'success',
-      message: `バニラを参照に追加しました。次の読み込みから使用します: ${resolved}`,
+      message: pickedFreshly
+        ? `バニラを設定して参照に追加しました。次の読み込みから使用します: ${resolved}`
+        : `バニラを参照に追加しました。次の読み込みから使用します: ${resolved}`,
     });
   }, [referencePaths, vanillaDataPath, showNotice]);
+
+  const handleChangeVanillaPath = useCallback(async () => {
+    const pickResult = await window.electronApi.pickAndSaveVanillaDataPath();
+    if (!pickResult) {
+      return;
+    }
+    const previousPath = vanillaDataPath;
+    setVanillaDataPath(pickResult.path);
+    setReferencePaths((prev) => {
+      if (previousPath === null) {
+        return prev;
+      }
+      const oldIdx = prev.indexOf(previousPath);
+      if (oldIdx === -1) {
+        return prev;
+      }
+      const newIdx = prev.indexOf(pickResult.path);
+      if (newIdx !== -1 && newIdx !== oldIdx) {
+        return prev.filter((_, i) => i !== oldIdx);
+      }
+      return prev.map((item) => (item === previousPath ? pickResult.path : item));
+    });
+    if (!pickResult.hasGamedata) {
+      showNotice({
+        kind: 'warning',
+        message: `バニラ data を更新しましたが、gamedata.base が見つかりません: ${pickResult.path}`,
+      });
+    } else {
+      showNotice({
+        kind: 'success',
+        message: `バニラ data を更新しました: ${pickResult.path}`,
+      });
+    }
+  }, [vanillaDataPath, showNotice]);
 
   const handleDrop = useCallback<DragEventHandler<HTMLDivElement>>(
     async (event) => {
@@ -228,9 +361,13 @@ const App = () => {
       }
 
       setLastExportedPath(result.filePath);
+      const sizeLabel =
+        result.byteCount !== null
+          ? ` (${formatByteSize(result.byteCount)})`
+          : '';
       showNotice({
         kind: 'success',
-        message: `modデータをMarkdownで保存しました: ${result.filePath}`,
+        message: `modデータをMarkdownで保存しました${sizeLabel}: ${result.filePath}`,
       });
     } catch (error) {
       showNotice({
@@ -302,6 +439,10 @@ const App = () => {
             onApplyVanillaReference={() => {
               void handleApplyVanillaReference();
             }}
+            onChangeVanillaPath={() => {
+              void handleChangeVanillaPath();
+            }}
+            onClearReferencePaths={handleClearReferencePaths}
             onDrop={handleDrop}
             onPickFiles={() => {
               void handlePickModFiles();
@@ -312,7 +453,8 @@ const App = () => {
             onPickReferenceFolders={() => {
               void handlePickReferenceFolders();
             }}
-            referencePathCount={referencePaths.length}
+            onRemoveReferencePath={handleRemoveReferencePath}
+            referencePaths={referencePaths}
             setDragging={setIsDragging}
             vanillaDataPath={vanillaDataPath}
           />
@@ -467,6 +609,28 @@ const App = () => {
             </button>
           </div>
         </header>
+
+        {isLoadingProject && loadProgress ? (
+          <div className="topbar-progress">
+            <div className="topbar-progress-info">
+              <span className="topbar-progress-label">
+                {loadProgress.phase === 'target' ? '解析中' : '参照を解析中'}
+              </span>
+              <span className="topbar-progress-counter">
+                {formatNumber(loadProgress.current)} / {formatNumber(loadProgress.total)}
+              </span>
+              <code className="topbar-progress-file">{loadProgress.currentFile}</code>
+            </div>
+            <div className="topbar-progress-track">
+              <div
+                className="topbar-progress-bar"
+                style={{
+                  width: `${Math.min(100, (loadProgress.current / loadProgress.total) * 100)}%`,
+                }}
+              />
+            </div>
+          </div>
+        ) : null}
 
         {notice ? (
           <div className="topbar-notice">

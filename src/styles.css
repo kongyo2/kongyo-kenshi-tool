@@ -609,6 +609,214 @@ code,
   font-size: 0.86rem;
 }
 
+.vanilla-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.86rem;
+}
+
+.vanilla-status-label {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.vanilla-status-path {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ink);
+  word-break: break-all;
+}
+
+.vanilla-status-change {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.vanilla-status-change:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ink);
+}
+
+.vanilla-status-change:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.reference-list {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--bg-softer);
+  border: 1px solid var(--border);
+}
+
+.reference-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.reference-list-title {
+  font-weight: 600;
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+
+.reference-list-clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.reference-list-clear:hover:not(:disabled) {
+  background: rgba(255, 141, 116, 0.12);
+  color: var(--danger);
+}
+
+.reference-list-clear:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.reference-list-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.reference-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px 12px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.reference-row-path {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+  word-break: break-all;
+  background: none;
+  padding: 0;
+}
+
+.reference-row-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink-mute);
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.reference-row-remove:hover:not(:disabled) {
+  background: rgba(255, 141, 116, 0.16);
+  color: var(--danger);
+  border-color: rgba(255, 141, 116, 0.36);
+}
+
+.reference-row-remove:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.topbar-progress {
+  display: grid;
+  gap: 6px;
+  padding: 10px 16px;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+}
+
+.topbar-progress-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+
+.topbar-progress-label {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.topbar-progress-counter {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.topbar-progress-file {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topbar-progress-track {
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.topbar-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--highlight), var(--highlight-strong));
+  transition: width 0.18s ease;
+}
+
+.notice-warning {
+  background: rgba(255, 207, 136, 0.16);
+  border: 1px solid rgba(255, 207, 136, 0.42);
+  color: var(--warning);
+}
+
+.notice-warning .notice-dot {
+  background: var(--warning);
+}
+
 .loader-tips {
   display: grid;
   gap: 8px;

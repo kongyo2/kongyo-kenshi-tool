@@ -1,7 +1,7 @@
 import cx from 'clsx';
 import { CloseIcon } from './Icons.tsx';
 
-export type NoticeKind = 'error' | 'info' | 'success';
+export type NoticeKind = 'error' | 'info' | 'success' | 'warning';
 
 export interface NoticeState {
   kind: NoticeKind;
@@ -12,6 +12,7 @@ const noticeClassNames: Record<NoticeKind, string> = {
   error: 'notice-error',
   info: 'notice-info',
   success: 'notice-success',
+  warning: 'notice-warning',
 };
 
 interface NoticeProps {
