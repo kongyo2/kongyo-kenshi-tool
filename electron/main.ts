@@ -11,12 +11,18 @@ import {
 import { parseMod } from '../src/shared/mod-format.ts';
 import { renderProjectMarkdown } from '../src/shared/mod-markdown.ts';
 import type { InspectorRecord, LoadedMod, TextRecord } from '../src/shared/models.ts';
+import { loadAppSettings, saveAppSettings } from './settings.ts';
 
 const electronRoot = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.resolve(electronRoot, '..');
 const rendererDist = path.join(appRoot, 'dist');
 const preloadPath = path.join(electronRoot, 'preload.mjs');
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL);
+
+const modFileExtensions = new Set(['.mod', '.base']);
+
+const isModFile = (filePath: string) =>
+  modFileExtensions.has(path.extname(filePath).toLowerCase());
 
 const createWindow = async () => {
   const mainWindow = new BrowserWindow({
@@ -63,7 +69,7 @@ const collectModPathsFromDirectory = async (directoryPath: string) => {
       continue;
     }
 
-    if (entry.isFile() && path.extname(entry.name).toLowerCase() === '.mod') {
+    if (entry.isFile() && isModFile(entry.name)) {
       collectedPaths.push(fullPath);
     }
   }
@@ -98,7 +104,7 @@ const collectModPaths = async (pathsToScan: string[]) => {
       continue;
     }
 
-    if (stats.isFile() && path.extname(currentPath).toLowerCase() === '.mod') {
+    if (stats.isFile() && isModFile(currentPath)) {
       collectedPaths.push(currentPath);
     }
   }
@@ -116,7 +122,7 @@ const parseModFiles = async (
 
   for (const modPath of modPaths) {
     const fileBuffer = await readFile(modPath);
-    const modName = path.basename(modPath, '.mod');
+    const modName = path.parse(modPath).name;
     const parsed = parseMod(fileBuffer, modName, modPath);
 
     textRecords.push(...parsed.textRecords);
@@ -160,7 +166,7 @@ const parseProject = async (input: LoadModsRequest) => {
     inspectorRecords: targetProject.inspectorRecords,
     mods: [...targetProject.mods, ...referenceProject.mods],
     sourceModName:
-      targetProject.mods[0] ? path.basename(targetProject.mods[0].fileName, '.mod') : 'unknown',
+      targetProject.mods[0] ? path.parse(targetProject.mods[0].fileName).name : 'unknown',
     textRecords: targetProject.textRecords,
   };
 };
@@ -170,12 +176,12 @@ const registerIpc = () => {
     const result = await dialog.showOpenDialog({
       filters: [
         {
-          extensions: ['mod'],
-          name: 'Kenshi modファイル',
+          extensions: ['mod', 'base'],
+          name: 'Kenshi mod/base ファイル',
         },
       ],
       properties: ['openFile', 'multiSelections'],
-      title: 'modファイルを選択',
+      title: 'mod / base ファイルを選択',
     });
 
     return result.canceled ? [] : result.filePaths;
@@ -233,6 +239,27 @@ const registerIpc = () => {
     if (filePathValue.length > 0) {
       shell.showItemInFolder(filePathValue);
     }
+  });
+
+  ipcMain.handle('settings:get-vanilla-data-path', async () => {
+    const settings = await loadAppSettings();
+    return settings.vanillaDataPath;
+  });
+
+  ipcMain.handle('settings:pick-and-save-vanilla-data-path', async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openDirectory'],
+      title:
+        'バニラ Kenshi の data フォルダを選択 (例: ...\\steamapps\\common\\Kenshi\\data)',
+    });
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return null;
+    }
+
+    const selectedPath = result.filePaths[0]!;
+    const saved = await saveAppSettings({ vanillaDataPath: selectedPath });
+    return saved.vanillaDataPath;
   });
 };
 

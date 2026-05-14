@@ -15,6 +15,11 @@ export const exportModMarkdownResponseSchema = z.object({
   filePath: z.string().nullable(),
 });
 
+export const appSettingsSchema = z.object({
+  vanillaDataPath: z.string().nullable().default(null),
+});
+
+export type AppSettings = z.infer<typeof appSettingsSchema>;
 export type ExportModMarkdownRequest = z.infer<
   typeof exportModMarkdownRequestSchema
 >;
@@ -28,8 +33,10 @@ export interface ElectronApi {
     input: ExportModMarkdownRequest,
   ) => Promise<ExportModMarkdownResponse>;
   getPathForFile: (file: File) => string;
+  getVanillaDataPath: () => Promise<string | null>;
   loadMods: (input: LoadModsRequest) => Promise<z.infer<typeof modProjectSchema>>;
   pickModFiles: () => Promise<string[]>;
   pickModFolders: () => Promise<string[]>;
+  pickAndSaveVanillaDataPath: () => Promise<string | null>;
   revealFileInFolder: (filePath: string) => Promise<void>;
 }

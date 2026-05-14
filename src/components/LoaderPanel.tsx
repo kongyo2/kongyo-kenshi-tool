@@ -3,25 +3,31 @@ import type { DragEventHandler } from 'react';
 import { FileIcon, FolderIcon, UploadIcon } from './Icons.tsx';
 
 interface LoaderPanelProps {
+  hasSavedVanillaPath: boolean;
   isBusy: boolean;
   isDragging: boolean;
+  onApplyVanillaReference: () => void;
   onDrop: DragEventHandler<HTMLDivElement>;
   onPickFiles: () => void;
   onPickFolders: () => void;
   onPickReferenceFolders: () => void;
   referencePathCount: number;
   setDragging: (value: boolean) => void;
+  vanillaDataPath: string | null;
 }
 
 export const LoaderPanel = ({
+  hasSavedVanillaPath,
   isBusy,
   isDragging,
+  onApplyVanillaReference,
   onDrop,
   onPickFiles,
   onPickFolders,
   onPickReferenceFolders,
   referencePathCount,
   setDragging,
+  vanillaDataPath,
 }: LoaderPanelProps) => (
   <section className="loader-panel">
     <div
@@ -41,7 +47,7 @@ export const LoaderPanel = ({
       </div>
       <h2 className="dropzone-title">Kenshi modを読み込む</h2>
       <p className="dropzone-text">
-        複数の <code>.mod</code> ファイルや Workshop 配下のサブフォルダを解析し、
+        複数の <code>.mod</code> / <code>.base</code> ファイルや Workshop 配下のサブフォルダを解析し、
         LLM に読ませるための Markdown を生成できます。
       </p>
       <div className="dropzone-actions">
@@ -72,10 +78,29 @@ export const LoaderPanel = ({
           <FolderIcon height="16" width="16" />
           参照フォルダ
         </button>
+        <button
+          className="secondary-button"
+          disabled={isBusy}
+          onClick={onApplyVanillaReference}
+          title={
+            vanillaDataPath
+              ? `バニラ data フォルダ: ${vanillaDataPath}`
+              : '初回はバニラ data フォルダを選択します'
+          }
+          type="button"
+        >
+          <FolderIcon height="16" width="16" />
+          {hasSavedVanillaPath ? 'バニラ参照' : 'バニラを設定'}
+        </button>
       </div>
       {referencePathCount > 0 ? (
         <p className="reference-status">
           参照フォルダ {referencePathCount} 件を使用します。
+        </p>
+      ) : null}
+      {hasSavedVanillaPath && vanillaDataPath ? (
+        <p className="reference-status">
+          バニラ data: <code>{vanillaDataPath}</code>
         </p>
       ) : null}
     </div>

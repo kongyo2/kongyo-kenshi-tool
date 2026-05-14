@@ -1893,7 +1893,7 @@ const getLookupDialogRecords = (
   return [...contextDialogRecords, ...targetDialogRecords];
 };
 
-const normalizeModName = (value: string) => value.replace(/\.mod$/i, '');
+const normalizeModName = (value: string) => value.replace(/\.(mod|base)$/i, '');
 
 const getVisibleStringEntries = (record: Pick<InspectorRecord, 'strings'>) =>
   record.strings.filter((entry) => entry.value.length > 0);
@@ -2051,14 +2051,14 @@ const renderHeader = (project: ModProject) => {
   lines.push('');
   if (referenceMods.length > 0) {
     lines.push(
-      'This file is a target-focused Markdown dump of the selected Kenshi `.mod` files,',
+      'This file is a target-focused Markdown dump of the selected Kenshi `.mod` / `.base` files,',
     );
     lines.push(
       'with reference context loaded only for resolving names, dialogue links, and cross-mod relationships.',
     );
   } else {
     lines.push(
-      'This file is a merged Markdown dump of all loaded Kenshi `.mod` files,',
+      'This file is a merged Markdown dump of all loaded Kenshi `.mod` / `.base` files,',
     );
     lines.push('formatted for human review and LLM ingestion.');
   }

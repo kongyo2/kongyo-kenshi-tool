@@ -1,4 +1,11 @@
-import { useCallback, useMemo, useState, useTransition, type DragEventHandler } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useTransition,
+  type DragEventHandler,
+} from 'react';
 import {
   CloseIcon,
   DownloadIcon,
@@ -26,8 +33,16 @@ const App = () => {
   const [isExportingMarkdown, setIsExportingMarkdown] = useState(false);
   const [lastExportedPath, setLastExportedPath] = useState<string | null>(null);
   const [referencePaths, setReferencePaths] = useState<string[]>([]);
+  const [vanillaDataPath, setVanillaDataPath] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<ViewId>('overview');
   const [, startTransition] = useTransition();
+
+  useEffect(() => {
+    void (async () => {
+      const saved = await window.electronApi.getVanillaDataPath();
+      setVanillaDataPath(saved);
+    })();
+  }, []);
 
   const stats = useMemo(
     () => (project ? countProjectStats(project) : null),
@@ -115,6 +130,26 @@ const App = () => {
       message: '参照フォルダ設定を解除しました。',
     });
   }, [showNotice]);
+
+  const handleApplyVanillaReference = useCallback(async () => {
+    let targetPath = vanillaDataPath;
+    if (!targetPath) {
+      targetPath = await window.electronApi.pickAndSaveVanillaDataPath();
+      if (!targetPath) {
+        return;
+      }
+      setVanillaDataPath(targetPath);
+    }
+
+    const resolved = targetPath;
+    setReferencePaths((prev) =>
+      prev.includes(resolved) ? prev : [...prev, resolved],
+    );
+    showNotice({
+      kind: 'success',
+      message: `バニラを参照に追加しました: ${resolved}`,
+    });
+  }, [vanillaDataPath, showNotice]);
 
   const handleDrop = useCallback<DragEventHandler<HTMLDivElement>>(
     async (event) => {
@@ -229,8 +264,12 @@ const App = () => {
             </div>
           </header>
           <LoaderPanel
+            hasSavedVanillaPath={vanillaDataPath !== null}
             isBusy={isBusy}
             isDragging={isDragging}
+            onApplyVanillaReference={() => {
+              void handleApplyVanillaReference();
+            }}
             onDrop={handleDrop}
             onPickFiles={() => {
               void handlePickModFiles();
@@ -243,6 +282,7 @@ const App = () => {
             }}
             referencePathCount={referencePaths.length}
             setDragging={setIsDragging}
+            vanillaDataPath={vanillaDataPath}
           />
         </div>
       );
@@ -332,6 +372,22 @@ const App = () => {
             >
               <FolderIcon height="14" width="14" />
               参照フォルダ
+            </button>
+            <button
+              className="ghost-button"
+              disabled={isBusy}
+              onClick={() => {
+                void handleApplyVanillaReference();
+              }}
+              title={
+                vanillaDataPath
+                  ? `バニラ data フォルダ: ${vanillaDataPath}`
+                  : '初回はバニラ data フォルダを選択します'
+              }
+              type="button"
+            >
+              <FolderIcon height="14" width="14" />
+              {vanillaDataPath ? 'バニラ参照' : 'バニラを設定'}
             </button>
             {referencePaths.length > 0 ? (
               <button
