@@ -116,12 +116,36 @@ const App = () => {
       return;
     }
 
-    setReferencePaths(selectedPaths);
+    const additions = selectedPaths.filter(
+      (selected) => !referencePaths.includes(selected),
+    );
+    const duplicateCount = selectedPaths.length - additions.length;
+
+    if (additions.length === 0) {
+      showNotice({
+        kind: 'info',
+        message: `選択した ${formatNumber(selectedPaths.length)} 件はすべて既に参照に含まれています。`,
+      });
+      return;
+    }
+
+    setReferencePaths((prev) => {
+      const next = [...prev];
+      for (const item of additions) {
+        if (!next.includes(item)) {
+          next.push(item);
+        }
+      }
+      return next;
+    });
     showNotice({
       kind: 'info',
-      message: `参照フォルダを ${formatNumber(selectedPaths.length)} 件設定しました。次の読み込みから使用します。`,
+      message:
+        duplicateCount === 0
+          ? `参照フォルダを ${formatNumber(additions.length)} 件追加しました。次の読み込みから使用します。`
+          : `参照フォルダを ${formatNumber(additions.length)} 件追加しました (${formatNumber(duplicateCount)} 件は重複のため除外)。次の読み込みから使用します。`,
     });
-  }, [showNotice]);
+  }, [referencePaths, showNotice]);
 
   const handleClearReferencePaths = useCallback(() => {
     setReferencePaths([]);
@@ -142,14 +166,22 @@ const App = () => {
     }
 
     const resolved = targetPath;
+    if (referencePaths.includes(resolved)) {
+      showNotice({
+        kind: 'info',
+        message: `バニラは既に参照に含まれています: ${resolved}`,
+      });
+      return;
+    }
+
     setReferencePaths((prev) =>
       prev.includes(resolved) ? prev : [...prev, resolved],
     );
     showNotice({
       kind: 'success',
-      message: `バニラを参照に追加しました: ${resolved}`,
+      message: `バニラを参照に追加しました。次の読み込みから使用します: ${resolved}`,
     });
-  }, [vanillaDataPath, showNotice]);
+  }, [referencePaths, vanillaDataPath, showNotice]);
 
   const handleDrop = useCallback<DragEventHandler<HTMLDivElement>>(
     async (event) => {
