@@ -16,7 +16,12 @@ export const exportModMarkdownResponseSchema = z.object({
   filePath: z.string().nullable(),
 });
 
+export const copyModMarkdownResponseSchema = z.object({
+  byteCount: z.number().int().nonnegative(),
+});
+
 export const appSettingsSchema = z.object({
+  lastTargetPaths: z.array(z.string()).default([]),
   referencePaths: z.array(z.string()).default([]),
   vanillaDataPath: z.string().nullable().default(null),
 });
@@ -34,6 +39,9 @@ export const loadProgressSchema = z.object({
 });
 
 export type AppSettings = z.infer<typeof appSettingsSchema>;
+export type CopyModMarkdownResponse = z.infer<
+  typeof copyModMarkdownResponseSchema
+>;
 export type ExportModMarkdownRequest = z.infer<
   typeof exportModMarkdownRequestSchema
 >;
@@ -45,6 +53,9 @@ export type LoadProgress = z.infer<typeof loadProgressSchema>;
 export type VanillaPickResult = z.infer<typeof vanillaPickResultSchema>;
 
 export interface ElectronApi {
+  copyModMarkdown: (
+    input: ExportModMarkdownRequest,
+  ) => Promise<CopyModMarkdownResponse>;
   exportModMarkdown: (
     input: ExportModMarkdownRequest,
   ) => Promise<ExportModMarkdownResponse>;
@@ -56,5 +67,6 @@ export interface ElectronApi {
   pickModFiles: () => Promise<string[]>;
   pickModFolders: () => Promise<string[]>;
   revealFileInFolder: (filePath: string) => Promise<void>;
+  saveLastTargetPaths: (paths: readonly string[]) => Promise<void>;
   saveReferencePaths: (paths: readonly string[]) => Promise<void>;
 }

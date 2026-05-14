@@ -1,11 +1,18 @@
 import cx from 'clsx';
 import type { DragEventHandler } from 'react';
-import { CloseIcon, FileIcon, FolderIcon, ReplaceIcon, UploadIcon } from './Icons.tsx';
+import {
+  CloseIcon,
+  FileIcon,
+  FolderIcon,
+  ReplaceIcon,
+  UploadIcon,
+} from './Icons.tsx';
 
 interface LoaderPanelProps {
   hasSavedVanillaPath: boolean;
   isBusy: boolean;
   isDragging: boolean;
+  lastTargetPaths: readonly string[];
   onApplyVanillaReference: () => void;
   onChangeVanillaPath: () => void;
   onClearReferencePaths: () => void;
@@ -13,16 +20,27 @@ interface LoaderPanelProps {
   onPickFiles: () => void;
   onPickFolders: () => void;
   onPickReferenceFolders: () => void;
+  onReloadLastTargets: () => void;
   onRemoveReferencePath: (path: string) => void;
   referencePaths: readonly string[];
   setDragging: (value: boolean) => void;
   vanillaDataPath: string | null;
 }
 
+const summarizeLastTargets = (paths: readonly string[]) => {
+  if (paths.length === 0) return null;
+  const first = paths[0]!;
+  const tail = first.split(/[/\\]/).pop() ?? first;
+  return paths.length === 1
+    ? tail
+    : `${tail} 他 ${paths.length - 1} 件`;
+};
+
 export const LoaderPanel = ({
   hasSavedVanillaPath,
   isBusy,
   isDragging,
+  lastTargetPaths,
   onApplyVanillaReference,
   onChangeVanillaPath,
   onClearReferencePaths,
@@ -30,6 +48,7 @@ export const LoaderPanel = ({
   onPickFiles,
   onPickFolders,
   onPickReferenceFolders,
+  onReloadLastTargets,
   onRemoveReferencePath,
   referencePaths,
   setDragging,
@@ -113,6 +132,23 @@ export const LoaderPanel = ({
             変更
           </button>
         </p>
+      ) : null}
+      {lastTargetPaths.length > 0 ? (
+        <div className="last-target">
+          <span className="last-target-label">前回のmod:</span>
+          <code className="last-target-summary" title={lastTargetPaths.join('\n')}>
+            {summarizeLastTargets(lastTargetPaths)}
+          </code>
+          <button
+            className="last-target-reload"
+            disabled={isBusy}
+            onClick={onReloadLastTargets}
+            type="button"
+          >
+            <ReplaceIcon height="12" width="12" />
+            再読み込み
+          </button>
+        </div>
       ) : null}
       {referencePaths.length > 0 ? (
         <div className="reference-list">

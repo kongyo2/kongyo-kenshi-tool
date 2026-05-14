@@ -14,6 +14,7 @@ import {
   InspectorIcon,
   ModsIcon,
   OverviewIcon,
+  SaveIcon,
 } from './components/Icons.tsx';
 import { LoaderPanel } from './components/LoaderPanel.tsx';
 import { Notice, type NoticeState } from './components/Notice.tsx';
@@ -40,8 +41,10 @@ const App = () => {
   const [lastExportedPath, setLastExportedPath] = useState<string | null>(null);
   const [referencePaths, setReferencePaths] = useState<string[]>([]);
   const [vanillaDataPath, setVanillaDataPath] = useState<string | null>(null);
+  const [lastTargetPaths, setLastTargetPaths] = useState<string[]>([]);
   const [activeView, setActiveView] = useState<ViewId>('overview');
   const [loadProgress, setLoadProgress] = useState<LoadProgress | null>(null);
+  const [isCopyingMarkdown, setIsCopyingMarkdown] = useState(false);
   const [, startTransition] = useTransition();
 
   const [settingsLoaded, setSettingsLoaded] = useState(false);
@@ -51,6 +54,7 @@ const App = () => {
       const saved = await window.electronApi.getAppSettings();
       setVanillaDataPath(saved.vanillaDataPath);
       setReferencePaths(saved.referencePaths);
+      setLastTargetPaths(saved.lastTargetPaths);
       setSettingsLoaded(true);
     })();
   }, []);
@@ -74,7 +78,7 @@ const App = () => {
     [project],
   );
 
-  const isBusy = isLoadingProject || isExportingMarkdown;
+  const isBusy = isLoadingProject || isExportingMarkdown || isCopyingMarkdown;
 
   const showNotice = useCallback((next: NoticeState) => {
     setNotice(next);
@@ -103,6 +107,8 @@ const App = () => {
           setProject(loadedProject);
           setActiveView('overview');
         });
+        setLastTargetPaths(paths);
+        void window.electronApi.saveLastTargetPaths(paths);
         const emptyTargetMods = loadedProject.mods.filter(
           (mod) => mod.role === 'target' && mod.recordCount === 0,
         );
@@ -336,6 +342,38 @@ const App = () => {
     [loadFromPaths, showNotice],
   );
 
+  const handleReloadLastTargets = useCallback(async () => {
+    if (lastTargetPaths.length === 0) {
+      return;
+    }
+    await loadFromPaths(lastTargetPaths);
+  }, [lastTargetPaths, loadFromPaths]);
+
+  const handleCopyMarkdown = useCallback(async () => {
+    if (!project) {
+      return;
+    }
+    setIsCopyingMarkdown(true);
+    showNotice({
+      kind: 'info',
+      message: 'Markdownをクリップボードへコピーしています。',
+    });
+    try {
+      const result = await window.electronApi.copyModMarkdown({ project });
+      showNotice({
+        kind: 'success',
+        message: `クリップボードへコピーしました (${formatByteSize(result.byteCount)})。LLMへそのままペーストできます。`,
+      });
+    } catch (error) {
+      showNotice({
+        kind: 'error',
+        message: `クリップボードへのコピーに失敗しました: ${getErrorMessage(error)}`,
+      });
+    } finally {
+      setIsCopyingMarkdown(false);
+    }
+  }, [project, showNotice]);
+
   const handleExportMarkdown = useCallback(async () => {
     if (!project) {
       return;
@@ -436,6 +474,7 @@ const App = () => {
             hasSavedVanillaPath={vanillaDataPath !== null}
             isBusy={isBusy}
             isDragging={isDragging}
+            lastTargetPaths={lastTargetPaths}
             onApplyVanillaReference={() => {
               void handleApplyVanillaReference();
             }}
@@ -453,6 +492,9 @@ const App = () => {
             onPickReferenceFolders={() => {
               void handlePickReferenceFolders();
             }}
+            onReloadLastTargets={() => {
+              void handleReloadLastTargets();
+            }}
             onRemoveReferencePath={handleRemoveReferencePath}
             referencePaths={referencePaths}
             setDragging={setIsDragging}
@@ -466,6 +508,10 @@ const App = () => {
       case 'overview':
         return (
           <OverviewView
+            isCopyingMarkdown={isCopyingMarkdown}
+            onCopyMarkdown={() => {
+              void handleCopyMarkdown();
+            }}
             onExportMarkdown={() => {
               void handleExportMarkdown();
             }}
@@ -515,8 +561,23 @@ const App = () => {
                     {formatNumber(project.inspectorRecords.length)} records
                   </span>
                   {project.contextRecords.length > 0 ? (
-                    <span className="topbar-chip">
+                    <span
+                      className="topbar-chip"
+                      title={
+                        referencePaths.length > 0
+                          ? `参照フォルダ:\n${referencePaths.join('\n')}`
+                          : undefined
+                      }
+                    >
                       参照 {formatNumber(project.contextRecords.length)}
+                    </span>
+                  ) : null}
+                  {project.missingReferencePaths.length > 0 ? (
+                    <span
+                      className="topbar-chip topbar-chip-warning"
+                      title={`読み込めなかった参照パス:\n${project.missingReferencePaths.join('\n')}`}
+                    >
+                      欠落 {formatNumber(project.missingReferencePaths.length)}
                     </span>
                   ) : null}
                 </span>
@@ -595,6 +656,18 @@ const App = () => {
             >
               <FolderIcon height="14" width="14" />
               フォルダを開く
+            </button>
+            <button
+              className="ghost-button"
+              disabled={!project || isBusy}
+              onClick={() => {
+                void handleCopyMarkdown();
+              }}
+              title="生成したMarkdownをクリップボードへコピー (LLMへペースト用)"
+              type="button"
+            >
+              <SaveIcon height="14" width="14" />
+              {isCopyingMarkdown ? 'コピー中…' : 'コピー'}
             </button>
             <button
               className="accent-button"

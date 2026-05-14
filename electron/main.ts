@@ -1,9 +1,10 @@
-import { app, BrowserWindow, Menu, dialog, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, shell } from 'electron';
 import { access, lstat, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import {
+  copyModMarkdownResponseSchema,
   exportModMarkdownRequestSchema,
   exportModMarkdownResponseSchema,
   loadModsRequestSchema,
@@ -281,6 +282,15 @@ const registerIpc = () => {
     });
   });
 
+  ipcMain.handle('mods:copy-markdown', async (_event, rawInput) => {
+    const input = exportModMarkdownRequestSchema.parse(rawInput);
+    const markdown = renderProjectMarkdown(input.project);
+    clipboard.writeText(markdown);
+    return copyModMarkdownResponseSchema.parse({
+      byteCount: Buffer.byteLength(markdown, 'utf-8'),
+    });
+  });
+
   ipcMain.handle('mods:export-markdown', async (_event, rawInput) => {
     const input = exportModMarkdownRequestSchema.parse(rawInput);
     const defaultPath = path.join(
@@ -331,6 +341,14 @@ const registerIpc = () => {
     const paths = z.array(z.string()).parse(rawInput);
     await saveAppSettings({ referencePaths: paths });
   });
+
+  ipcMain.handle(
+    'settings:save-last-target-paths',
+    async (_event, rawInput) => {
+      const paths = z.array(z.string()).parse(rawInput);
+      await saveAppSettings({ lastTargetPaths: paths });
+    },
+  );
 
   ipcMain.handle('settings:pick-and-save-vanilla-data-path', async () => {
     const result = await dialog.showOpenDialog({

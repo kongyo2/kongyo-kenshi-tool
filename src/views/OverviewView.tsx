@@ -6,6 +6,8 @@ import { formatNumber } from '../lib/utils.ts';
 import type { ModProject } from '../shared/models.ts';
 
 interface OverviewViewProps {
+  isCopyingMarkdown: boolean;
+  onCopyMarkdown: () => void;
   onExportMarkdown: () => void;
   onJumpToInspector: () => void;
   onJumpToMods: () => void;
@@ -14,6 +16,8 @@ interface OverviewViewProps {
 }
 
 export const OverviewView = ({
+  isCopyingMarkdown,
+  onCopyMarkdown,
   onExportMarkdown,
   onJumpToInspector,
   onJumpToMods,
@@ -102,6 +106,15 @@ export const OverviewView = ({
               type="button"
             >
               Markdownを書き出す
+            </button>
+            <button
+              className="secondary-button"
+              disabled={isCopyingMarkdown}
+              onClick={onCopyMarkdown}
+              title="保存ダイアログを介さずクリップボードへコピー (LLMへ直接ペースト用)"
+              type="button"
+            >
+              {isCopyingMarkdown ? 'コピー中…' : 'クリップボードへコピー'}
             </button>
             <button
               className="secondary-button"

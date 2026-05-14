@@ -4,6 +4,7 @@ import path from 'node:path';
 import { appSettingsSchema, type AppSettings } from '../src/shared/ipc.ts';
 
 const defaultSettings: AppSettings = {
+  lastTargetPaths: [],
   referencePaths: [],
   vanillaDataPath: null,
 };
