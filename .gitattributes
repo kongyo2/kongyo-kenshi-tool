@@ -1,0 +1,3 @@
+# 改行は OS を問わず LF に固定する。Windows (core.autocrlf=true) の checkout で
+# CRLF に変換されると、リリースビルドの oxfmt --check が全ファイルを不一致と判定する。
+* text=auto eol=lf
