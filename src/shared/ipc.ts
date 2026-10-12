@@ -1,5 +1,6 @@
-import { z } from 'zod';
-import { modProjectSchema } from './models.ts';
+import { z } from "zod";
+
+import { modProjectSchema } from "./models.ts";
 
 export const loadModsRequestSchema = z.object({
   paths: z.array(z.string()).min(1),
@@ -34,31 +35,21 @@ export const vanillaPickResultSchema = z.object({
 export const loadProgressSchema = z.object({
   current: z.number().int().nonnegative(),
   currentFile: z.string(),
-  phase: z.enum(['target', 'reference']),
+  phase: z.enum(["target", "reference"]),
   total: z.number().int().positive(),
 });
 
 export type AppSettings = z.infer<typeof appSettingsSchema>;
-export type CopyModMarkdownResponse = z.infer<
-  typeof copyModMarkdownResponseSchema
->;
-export type ExportModMarkdownRequest = z.infer<
-  typeof exportModMarkdownRequestSchema
->;
-export type ExportModMarkdownResponse = z.infer<
-  typeof exportModMarkdownResponseSchema
->;
+export type CopyModMarkdownResponse = z.infer<typeof copyModMarkdownResponseSchema>;
+export type ExportModMarkdownRequest = z.infer<typeof exportModMarkdownRequestSchema>;
+export type ExportModMarkdownResponse = z.infer<typeof exportModMarkdownResponseSchema>;
 export type LoadModsRequest = z.infer<typeof loadModsRequestSchema>;
 export type LoadProgress = z.infer<typeof loadProgressSchema>;
 export type VanillaPickResult = z.infer<typeof vanillaPickResultSchema>;
 
 export interface ElectronApi {
-  copyModMarkdown: (
-    input: ExportModMarkdownRequest,
-  ) => Promise<CopyModMarkdownResponse>;
-  exportModMarkdown: (
-    input: ExportModMarkdownRequest,
-  ) => Promise<ExportModMarkdownResponse>;
+  copyModMarkdown: (input: ExportModMarkdownRequest) => Promise<CopyModMarkdownResponse>;
+  exportModMarkdown: (input: ExportModMarkdownRequest) => Promise<ExportModMarkdownResponse>;
   getAppSettings: () => Promise<AppSettings>;
   getPathForFile: (file: File) => string;
   loadMods: (input: LoadModsRequest) => Promise<z.infer<typeof modProjectSchema>>;

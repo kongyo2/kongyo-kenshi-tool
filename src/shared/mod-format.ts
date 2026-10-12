@@ -1,4 +1,4 @@
-import { getItemTypeDefinition } from './item-types.ts';
+import { getItemTypeDefinition } from "./item-types.ts";
 import type {
   DialogRecord,
   DialogText,
@@ -7,7 +7,7 @@ import type {
   ModHeader,
   ReferenceCategory,
   TextRecord,
-} from './models.ts';
+} from "./models.ts";
 
 const dialogTypeCode = 19;
 
@@ -52,21 +52,21 @@ const readBoolean = (cursor: BinaryCursor) => {
   return value !== 0;
 };
 
-const textDecoder = new TextDecoder('utf-8');
+const textDecoder = new TextDecoder("utf-8");
 
 const repairCommonMojibake = (value: string) =>
   value
-    .replace(/â€”|â€“/g, '-')
-    .replace(/â€¦/g, '...')
+    .replace(/â€”|â€“/g, "-")
+    .replace(/â€¦/g, "...")
     .replace(/â€˜|â€™/g, "'")
     .replace(/â€œ|â€/g, '"')
-    .replace(/Â /g, ' ')
-    .replace(/Â/g, '');
+    .replace(/Â /g, " ")
+    .replace(/Â/g, "");
 
 const readString = (cursor: BinaryCursor) => {
   const length = readInt(cursor);
   if (length <= 0) {
-    return '';
+    return "";
   }
 
   const bytes = new Uint8Array(
@@ -81,18 +81,18 @@ const readString = (cursor: BinaryCursor) => {
 
 const readCommaList = (cursor: BinaryCursor) =>
   readString(cursor)
-    .split(',')
+    .split(",")
     .map((segment) => segment.trim())
     .filter((segment) => segment.length > 0);
 
 const getChangeTypeName = (changeType: number) => {
   switch (changeType) {
     case 0:
-      return 'New';
+      return "New";
     case 1:
-      return 'Changed';
+      return "Changed";
     case 2:
-      return 'Renamed';
+      return "Renamed";
     default:
       return `Unknown(${changeType})`;
   }
@@ -190,16 +190,14 @@ const readFileBlock = (cursor: BinaryCursor) => {
   return values;
 };
 
-const readReferenceCategories = (
-  cursor: BinaryCursor,
-): ReferenceCategory[] => {
+const readReferenceCategories = (cursor: BinaryCursor): ReferenceCategory[] => {
   const categoryCount = readInt(cursor);
   const categories: ReferenceCategory[] = [];
 
   for (let index = 0; index < categoryCount; index += 1) {
     const name = readString(cursor);
     const referenceCount = readInt(cursor);
-    const references: ReferenceCategory['references'] = [];
+    const references: ReferenceCategory["references"] = [];
 
     for (let innerIndex = 0; innerIndex < referenceCount; innerIndex += 1) {
       references.push({
@@ -379,7 +377,7 @@ export const parseMod = (
     const canExtractNameOrDescription =
       isTypeTextRelevant && !isDialogType && (dataType & 0b11) !== 1;
 
-    let description = '';
+    let description = "";
     const dialogTexts: DialogText[] = [];
 
     const boolValues = readBooleanBlock(cursor);
@@ -397,11 +395,11 @@ export const parseMod = (
       const value = readString(cursor);
       strings.push({ key, value });
 
-      if (key === 'description' && isTypeTextRelevant && !isDialogType) {
+      if (key === "description" && isTypeTextRelevant && !isDialogType) {
         description = value;
       }
 
-      if (isDialogType && key.startsWith('text')) {
+      if (isDialogType && key.startsWith("text")) {
         dialogTexts.push({
           original: value,
           textId: key,
@@ -454,7 +452,7 @@ export const parseMod = (
     if (isDialogType && dialogTexts.length > 0) {
       textRecords.push({
         ...baseRecord,
-        kind: 'dialog',
+        kind: "dialog",
         texts: dialogTexts,
       } satisfies DialogRecord);
       continue;
@@ -464,7 +462,7 @@ export const parseMod = (
       textRecords.push({
         ...baseRecord,
         description,
-        kind: 'entity',
+        kind: "entity",
       } satisfies EntityRecord);
     }
   }

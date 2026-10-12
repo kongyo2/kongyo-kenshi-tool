@@ -1,8 +1,10 @@
-import { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, shell } from 'electron';
-import { access, lstat, readdir, readFile, writeFile } from 'node:fs/promises';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { z } from 'zod';
+import { access, lstat, readdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, shell } from "electron";
+import { z } from "zod";
+
 import {
   copyModMarkdownResponseSchema,
   exportModMarkdownRequestSchema,
@@ -10,22 +12,21 @@ import {
   loadModsRequestSchema,
   type LoadModsRequest,
   type LoadProgress,
-} from '../src/shared/ipc.ts';
-import { parseMod } from '../src/shared/mod-format.ts';
-import { renderProjectMarkdown } from '../src/shared/mod-markdown.ts';
-import type { InspectorRecord, LoadedMod, TextRecord } from '../src/shared/models.ts';
-import { loadAppSettings, saveAppSettings } from './settings.ts';
+} from "../src/shared/ipc.ts";
+import { parseMod } from "../src/shared/mod-format.ts";
+import { renderProjectMarkdown } from "../src/shared/mod-markdown.ts";
+import type { InspectorRecord, LoadedMod, TextRecord } from "../src/shared/models.ts";
+import { loadAppSettings, saveAppSettings } from "./settings.ts";
 
 const electronRoot = path.dirname(fileURLToPath(import.meta.url));
-const appRoot = path.resolve(electronRoot, '..');
-const rendererDist = path.join(appRoot, 'dist');
-const preloadPath = path.join(electronRoot, 'preload.mjs');
+const appRoot = path.resolve(electronRoot, "..");
+const rendererDist = path.join(appRoot, "dist");
+const preloadPath = path.join(electronRoot, "preload.mjs");
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL);
 
-const modFileExtensions = new Set(['.mod', '.base']);
+const modFileExtensions = new Set([".mod", ".base"]);
 
-const isModFile = (filePath: string) =>
-  modFileExtensions.has(path.extname(filePath).toLowerCase());
+const isModFile = (filePath: string) => modFileExtensions.has(path.extname(filePath).toLowerCase());
 
 const createWindow = async () => {
   const mainWindow = new BrowserWindow({
@@ -33,9 +34,9 @@ const createWindow = async () => {
     height: 1000,
     minWidth: 1200,
     minHeight: 760,
-    backgroundColor: '#0f0b09',
+    backgroundColor: "#0f0b09",
     show: false,
-    title: 'Kenshiツール',
+    title: "Kenshiツール",
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -44,14 +45,14 @@ const createWindow = async () => {
     },
   });
 
-  mainWindow.once('ready-to-show', () => {
+  mainWindow.once("ready-to-show", () => {
     mainWindow.show();
   });
 
   if (isDevelopment && process.env.VITE_DEV_SERVER_URL) {
     await mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
   } else {
-    await mainWindow.loadFile(path.join(rendererDist, 'index.html'));
+    await mainWindow.loadFile(path.join(rendererDist, "index.html"));
   }
 };
 
@@ -60,7 +61,7 @@ const collectModPathsFromDirectory = async (directoryPath: string) => {
     withFileTypes: true,
   });
   const sortedEntries = [...entries].sort((left, right) =>
-    left.name.localeCompare(right.name, 'ja'),
+    left.name.localeCompare(right.name, "ja"),
   );
   const collectedPaths: string[] = [];
 
@@ -120,9 +121,7 @@ interface CollectResult {
   paths: string[];
 }
 
-const collectModPathsLenient = async (
-  pathsToScan: string[],
-): Promise<CollectResult> => {
+const collectModPathsLenient = async (pathsToScan: string[]): Promise<CollectResult> => {
   const collectedPaths: string[] = [];
   const missingPaths: string[] = [];
 
@@ -152,7 +151,7 @@ type ProgressReporter = (progress: LoadProgress) => void;
 
 const parseModFiles = async (
   modPaths: readonly string[],
-  role: LoadedMod['role'],
+  role: LoadedMod["role"],
   reportProgress: ProgressReporter,
   totalFiles: number,
   startIndex: number,
@@ -192,14 +191,11 @@ const parseModFiles = async (
   };
 };
 
-const parseProject = async (
-  input: LoadModsRequest,
-  reportProgress: ProgressReporter,
-) => {
+const parseProject = async (input: LoadModsRequest, reportProgress: ProgressReporter) => {
   const modPaths = await collectModPaths(input.paths);
 
   if (modPaths.length === 0) {
-    throw new Error('modファイルが見つかりませんでした。');
+    throw new Error("modファイルが見つかりませんでした。");
   }
 
   const referenceCollection = await collectModPathsLenient(input.referencePaths);
@@ -207,16 +203,10 @@ const parseProject = async (
     (modPath) => !modPaths.includes(modPath),
   );
   const totalFiles = modPaths.length + referenceModPaths.length;
-  const targetProject = await parseModFiles(
-    modPaths,
-    'target',
-    reportProgress,
-    totalFiles,
-    0,
-  );
+  const targetProject = await parseModFiles(modPaths, "target", reportProgress, totalFiles, 0);
   const referenceProject = await parseModFiles(
     referenceModPaths,
-    'reference',
+    "reference",
     reportProgress,
     totalFiles,
     modPaths.length,
@@ -232,8 +222,9 @@ const parseProject = async (
     inspectorRecords: targetProject.inspectorRecords,
     missingReferencePaths: referenceCollection.missingPaths,
     mods: [...targetProject.mods, ...referenceProject.mods],
-    sourceModName:
-      targetProject.mods[0] ? path.parse(targetProject.mods[0].fileName).name : 'unknown',
+    sourceModName: targetProject.mods[0]
+      ? path.parse(targetProject.mods[0].fileName).name
+      : "unknown",
     textRecords: targetProject.textRecords,
   };
 };
@@ -248,64 +239,64 @@ const pathExists = async (target: string) => {
 };
 
 const registerIpc = () => {
-  ipcMain.handle('dialog:pick-mod-files', async () => {
+  ipcMain.handle("dialog:pick-mod-files", async () => {
     const result = await dialog.showOpenDialog({
       filters: [
         {
-          extensions: ['mod', 'base'],
-          name: 'Kenshi mod/base ファイル',
+          extensions: ["mod", "base"],
+          name: "Kenshi mod/base ファイル",
         },
       ],
-      properties: ['openFile', 'multiSelections'],
-      title: 'mod / base ファイルを選択',
+      properties: ["openFile", "multiSelections"],
+      title: "mod / base ファイルを選択",
     });
 
     return result.canceled ? [] : result.filePaths;
   });
 
-  ipcMain.handle('dialog:pick-mod-folders', async () => {
+  ipcMain.handle("dialog:pick-mod-folders", async () => {
     const result = await dialog.showOpenDialog({
-      properties: ['openDirectory', 'multiSelections'],
-      title: 'modを含むフォルダを選択',
+      properties: ["openDirectory", "multiSelections"],
+      title: "modを含むフォルダを選択",
     });
 
     return result.canceled ? [] : result.filePaths;
   });
 
-  ipcMain.handle('mods:load', async (event, rawInput) => {
+  ipcMain.handle("mods:load", async (event, rawInput) => {
     const input = loadModsRequestSchema.parse(rawInput);
     const sender = event.sender;
     return parseProject(input, (progress) => {
       if (!sender.isDestroyed()) {
-        sender.send('mods:load-progress', progress);
+        sender.send("mods:load-progress", progress);
       }
     });
   });
 
-  ipcMain.handle('mods:copy-markdown', async (_event, rawInput) => {
+  ipcMain.handle("mods:copy-markdown", async (_event, rawInput) => {
     const input = exportModMarkdownRequestSchema.parse(rawInput);
     const markdown = renderProjectMarkdown(input.project);
     clipboard.writeText(markdown);
     return copyModMarkdownResponseSchema.parse({
-      byteCount: Buffer.byteLength(markdown, 'utf-8'),
+      byteCount: Buffer.byteLength(markdown, "utf-8"),
     });
   });
 
-  ipcMain.handle('mods:export-markdown', async (_event, rawInput) => {
+  ipcMain.handle("mods:export-markdown", async (_event, rawInput) => {
     const input = exportModMarkdownRequestSchema.parse(rawInput);
     const defaultPath = path.join(
-      app.getPath('downloads'),
+      app.getPath("downloads"),
       `${input.project.sourceModName}_mod_data.md`,
     );
     const dialogResult = await dialog.showSaveDialog({
       defaultPath,
       filters: [
         {
-          extensions: ['md'],
-          name: 'Markdownファイル',
+          extensions: ["md"],
+          name: "Markdownファイル",
         },
       ],
-      title: 'modデータのMarkdown書き出し先を選択',
+      title: "modデータのMarkdown書き出し先を選択",
     });
 
     if (dialogResult.canceled || !dialogResult.filePath) {
@@ -317,44 +308,40 @@ const registerIpc = () => {
     }
 
     const markdown = renderProjectMarkdown(input.project);
-    await writeFile(dialogResult.filePath, markdown, 'utf-8');
+    await writeFile(dialogResult.filePath, markdown, "utf-8");
 
     return exportModMarkdownResponseSchema.parse({
-      byteCount: Buffer.byteLength(markdown, 'utf-8'),
+      byteCount: Buffer.byteLength(markdown, "utf-8"),
       canceled: false,
       filePath: dialogResult.filePath,
     });
   });
 
-  ipcMain.handle('shell:show-item-in-folder', async (_event, filePath) => {
-    const filePathValue = typeof filePath === 'string' ? filePath : '';
+  ipcMain.handle("shell:show-item-in-folder", async (_event, filePath) => {
+    const filePathValue = typeof filePath === "string" ? filePath : "";
     if (filePathValue.length > 0) {
       shell.showItemInFolder(filePathValue);
     }
   });
 
-  ipcMain.handle('settings:get-all', async () => {
+  ipcMain.handle("settings:get-all", async () => {
     return loadAppSettings();
   });
 
-  ipcMain.handle('settings:save-reference-paths', async (_event, rawInput) => {
+  ipcMain.handle("settings:save-reference-paths", async (_event, rawInput) => {
     const paths = z.array(z.string()).parse(rawInput);
     await saveAppSettings({ referencePaths: paths });
   });
 
-  ipcMain.handle(
-    'settings:save-last-target-paths',
-    async (_event, rawInput) => {
-      const paths = z.array(z.string()).parse(rawInput);
-      await saveAppSettings({ lastTargetPaths: paths });
-    },
-  );
+  ipcMain.handle("settings:save-last-target-paths", async (_event, rawInput) => {
+    const paths = z.array(z.string()).parse(rawInput);
+    await saveAppSettings({ lastTargetPaths: paths });
+  });
 
-  ipcMain.handle('settings:pick-and-save-vanilla-data-path', async () => {
+  ipcMain.handle("settings:pick-and-save-vanilla-data-path", async () => {
     const result = await dialog.showOpenDialog({
-      properties: ['openDirectory'],
-      title:
-        'バニラ Kenshi の data フォルダを選択 (例: ...\\steamapps\\common\\Kenshi\\data)',
+      properties: ["openDirectory"],
+      title: "バニラ Kenshi の data フォルダを選択 (例: ...\\steamapps\\common\\Kenshi\\data)",
     });
 
     if (result.canceled || result.filePaths.length === 0) {
@@ -362,16 +349,14 @@ const registerIpc = () => {
     }
 
     const selectedPath = result.filePaths[0]!;
-    const hasGamedata = await pathExists(
-      path.join(selectedPath, 'gamedata.base'),
-    );
+    const hasGamedata = await pathExists(path.join(selectedPath, "gamedata.base"));
     const saved = await saveAppSettings({ vanillaDataPath: selectedPath });
     return { hasGamedata, path: saved.vanillaDataPath ?? selectedPath };
   });
 };
 
-process.on('message', (message) => {
-  if (message !== 'electron-vite&type=hot-reload') {
+process.on("message", (message) => {
+  if (message !== "electron-vite&type=hot-reload") {
     return;
   }
 
@@ -385,7 +370,7 @@ app.whenReady().then(async () => {
   registerIpc();
   await createWindow();
 
-  app.on('activate', async () => {
+  app.on("activate", async () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       await createWindow();
     }
@@ -394,8 +379,8 @@ app.whenReady().then(async () => {
   return undefined;
 });
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") {
     app.quit();
   }
 });

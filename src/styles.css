@@ -152,7 +152,10 @@ code,
   background: transparent;
   color: var(--ink);
   text-align: left;
-  transition: background 140ms ease, border-color 140ms ease, transform 140ms ease;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    transform 140ms ease;
 }
 
 .sidebar-nav-item:hover:not(:disabled) {
@@ -395,7 +398,11 @@ code,
   padding: 10px 14px;
   border-radius: 12px;
   border: 1px solid transparent;
-  transition: background 140ms ease, border-color 140ms ease, transform 140ms ease, opacity 140ms ease;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    transform 140ms ease,
+    opacity 140ms ease;
   font-size: 0.9rem;
   white-space: nowrap;
 }
@@ -556,7 +563,10 @@ code,
     linear-gradient(135deg, rgba(221, 177, 107, 0.08), rgba(255, 255, 255, 0.02)),
     rgba(0, 0, 0, 0.18);
   text-align: center;
-  transition: border-color 180ms ease, transform 180ms ease, background 180ms ease;
+  transition:
+    border-color 180ms ease,
+    transform 180ms ease,
+    background 180ms ease;
 }
 
 .dropzone.is-dragging {
@@ -648,7 +658,9 @@ code,
   background: transparent;
   color: var(--ink-soft);
   font-size: 0.78rem;
-  transition: background-color 0.15s ease, color 0.15s ease;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
 }
 
 .vanilla-status-change:hover:not(:disabled) {
@@ -694,7 +706,9 @@ code,
   background: rgba(221, 177, 107, 0.12);
   color: var(--highlight-strong);
   font-size: 0.78rem;
-  transition: background-color 0.15s ease, color 0.15s ease;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
 }
 
 .last-target-reload:hover:not(:disabled) {
@@ -741,7 +755,9 @@ code,
   background: transparent;
   color: var(--ink-soft);
   font-size: 0.78rem;
-  transition: background-color 0.15s ease, color 0.15s ease;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
 }
 
 .reference-list-clear:hover:not(:disabled) {
@@ -791,7 +807,10 @@ code,
   border: 1px solid transparent;
   background: transparent;
   color: var(--ink-mute);
-  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .reference-row-remove:hover:not(:disabled) {
@@ -901,7 +920,9 @@ code,
 }
 
 .stat-card.stat-primary {
-  background: linear-gradient(135deg, rgba(255, 207, 136, 0.18), rgba(255, 255, 255, 0.02)), var(--bg-elevated);
+  background:
+    linear-gradient(135deg, rgba(255, 207, 136, 0.18), rgba(255, 255, 255, 0.02)),
+    var(--bg-elevated);
   border-color: rgba(255, 207, 136, 0.3);
 }
 
@@ -1329,18 +1350,42 @@ code,
   border-color: transparent;
 }
 
-.entry-category.category-ai { background: rgba(201, 160, 255, 0.8); }
-.entry-category.category-character { background: rgba(255, 176, 138, 0.85); }
-.entry-category.category-dialog { background: rgba(135, 214, 163, 0.85); }
-.entry-category.category-equipment { background: rgba(255, 207, 136, 0.88); }
-.entry-category.category-faction { background: rgba(255, 141, 116, 0.85); }
-.entry-category.category-gamestate { background: rgba(111, 184, 255, 0.85); }
-.entry-category.category-item { background: rgba(242, 208, 107, 0.88); }
-.entry-category.category-other { background: rgba(203, 213, 225, 0.7); }
-.entry-category.category-research { background: rgba(126, 220, 212, 0.85); }
-.entry-category.category-ui { background: rgba(255, 158, 201, 0.85); }
-.entry-category.category-visual { background: rgba(156, 208, 255, 0.85); }
-.entry-category.category-world { background: rgba(138, 209, 124, 0.85); }
+.entry-category.category-ai {
+  background: rgba(201, 160, 255, 0.8);
+}
+.entry-category.category-character {
+  background: rgba(255, 176, 138, 0.85);
+}
+.entry-category.category-dialog {
+  background: rgba(135, 214, 163, 0.85);
+}
+.entry-category.category-equipment {
+  background: rgba(255, 207, 136, 0.88);
+}
+.entry-category.category-faction {
+  background: rgba(255, 141, 116, 0.85);
+}
+.entry-category.category-gamestate {
+  background: rgba(111, 184, 255, 0.85);
+}
+.entry-category.category-item {
+  background: rgba(242, 208, 107, 0.88);
+}
+.entry-category.category-other {
+  background: rgba(203, 213, 225, 0.7);
+}
+.entry-category.category-research {
+  background: rgba(126, 220, 212, 0.85);
+}
+.entry-category.category-ui {
+  background: rgba(255, 158, 201, 0.85);
+}
+.entry-category.category-visual {
+  background: rgba(156, 208, 255, 0.85);
+}
+.entry-category.category-world {
+  background: rgba(138, 209, 124, 0.85);
+}
 
 .entry-title {
   margin: 0;

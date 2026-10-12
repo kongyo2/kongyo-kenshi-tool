@@ -1,9 +1,5 @@
-import {
-  getItemCategory,
-  itemCategoryLabels,
-  type ItemCategory,
-} from '../shared/item-types.ts';
-import type { InspectorRecord, ModProject } from '../shared/models.ts';
+import { getItemCategory, itemCategoryLabels, type ItemCategory } from "../shared/item-types.ts";
+import type { InspectorRecord, ModProject } from "../shared/models.ts";
 
 export interface ProjectStats {
   dialogLineCount: number;
@@ -26,7 +22,7 @@ export const countProjectStats = (project: ModProject): ProjectStats => {
   let entityRecordCount = 0;
 
   for (const record of project.textRecords) {
-    if (record.kind === 'dialog') {
+    if (record.kind === "dialog") {
       dialogRecordCount += 1;
       dialogLineCount += record.texts.length;
       continue;

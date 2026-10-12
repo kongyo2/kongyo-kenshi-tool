@@ -1,12 +1,7 @@
-import cx from 'clsx';
-import type { DragEventHandler } from 'react';
-import {
-  CloseIcon,
-  FileIcon,
-  FolderIcon,
-  ReplaceIcon,
-  UploadIcon,
-} from './Icons.tsx';
+import cx from "clsx";
+import type { DragEventHandler } from "react";
+
+import { CloseIcon, FileIcon, FolderIcon, ReplaceIcon, UploadIcon } from "./Icons.tsx";
 
 interface LoaderPanelProps {
   hasSavedVanillaPath: boolean;
@@ -31,9 +26,7 @@ const summarizeLastTargets = (paths: readonly string[]) => {
   if (paths.length === 0) return null;
   const first = paths[0]!;
   const tail = first.split(/[/\\]/).pop() ?? first;
-  return paths.length === 1
-    ? tail
-    : `${tail} 他 ${paths.length - 1} 件`;
+  return paths.length === 1 ? tail : `${tail} 他 ${paths.length - 1} 件`;
 };
 
 export const LoaderPanel = ({
@@ -56,9 +49,9 @@ export const LoaderPanel = ({
 }: LoaderPanelProps) => (
   <section className="loader-panel">
     <div
-      className={cx('dropzone', {
-        'is-busy': isBusy,
-        'is-dragging': isDragging,
+      className={cx("dropzone", {
+        "is-busy": isBusy,
+        "is-dragging": isDragging,
       })}
       onDragEnter={() => setDragging(true)}
       onDragLeave={() => setDragging(false)}
@@ -72,16 +65,11 @@ export const LoaderPanel = ({
       </div>
       <h2 className="dropzone-title">Kenshi modを読み込む</h2>
       <p className="dropzone-text">
-        複数の <code>.mod</code> / <code>.base</code> ファイルや Workshop 配下のサブフォルダを解析し、
-        LLM に読ませるための Markdown を生成できます。
+        複数の <code>.mod</code> / <code>.base</code> ファイルや Workshop
+        配下のサブフォルダを解析し、 LLM に読ませるための Markdown を生成できます。
       </p>
       <div className="dropzone-actions">
-        <button
-          className="primary-button"
-          disabled={isBusy}
-          onClick={onPickFiles}
-          type="button"
-        >
+        <button className="primary-button" disabled={isBusy} onClick={onPickFiles} type="button">
           <FileIcon height="16" width="16" />
           modファイルを選択
         </button>
@@ -110,12 +98,12 @@ export const LoaderPanel = ({
           title={
             vanillaDataPath
               ? `バニラ data フォルダ: ${vanillaDataPath}`
-              : '初回はバニラ data フォルダを選択します'
+              : "初回はバニラ data フォルダを選択します"
           }
           type="button"
         >
           <FolderIcon height="16" width="16" />
-          {hasSavedVanillaPath ? 'バニラを参照に追加' : 'バニラを設定'}
+          {hasSavedVanillaPath ? "バニラを参照に追加" : "バニラを設定"}
         </button>
       </div>
       {hasSavedVanillaPath && vanillaDataPath ? (
@@ -136,7 +124,7 @@ export const LoaderPanel = ({
       {lastTargetPaths.length > 0 ? (
         <div className="last-target">
           <span className="last-target-label">前回のmod:</span>
-          <code className="last-target-summary" title={lastTargetPaths.join('\n')}>
+          <code className="last-target-summary" title={lastTargetPaths.join("\n")}>
             {summarizeLastTargets(lastTargetPaths)}
           </code>
           <button
@@ -153,9 +141,7 @@ export const LoaderPanel = ({
       {referencePaths.length > 0 ? (
         <div className="reference-list">
           <div className="reference-list-header">
-            <span className="reference-list-title">
-              参照フォルダ {referencePaths.length} 件
-            </span>
+            <span className="reference-list-title">参照フォルダ {referencePaths.length} 件</span>
             <button
               className="reference-list-clear"
               disabled={isBusy}

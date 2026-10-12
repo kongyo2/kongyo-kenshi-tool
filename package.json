@@ -1,31 +1,33 @@
 {
   "name": "kongyo-kenshi-tool",
   "version": "1.0.5",
-  "description": "Kenshi .mod を LLM向けMarkdownへ変換する Windows用デスクトップツール",
   "private": true,
+  "description": "Kenshi .mod を LLM向けMarkdownへ変換する Windows用デスクトップツール",
+  "keywords": [
+    "electron",
+    "kenshi",
+    "llm",
+    "markdown",
+    "react",
+    "vite"
+  ],
+  "license": "MIT",
+  "type": "module",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
-    "lint": "oxlint --silent .",
-    "lint:strict": "oxlint --deny-warnings .",
-    "check:file": "oxlint",
-    "check": "npm run typecheck && npm run lint:strict && npm run build",
+    "format": "oxfmt --check",
+    "format:fix": "oxfmt --write",
+    "lint": "oxlint --deny-warnings --format agent",
+    "lint:fix": "oxlint --fix --deny-warnings --format agent",
+    "lint:pretty": "oxlint --deny-warnings",
+    "lint:pretty:fix": "oxlint --fix --deny-warnings",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "verify:corpus": "node scripts/verify-corpus.ts",
+    "check": "npm run typecheck && npm run format && npm run lint:pretty && npm test && npm run build",
     "dist": "npm run check && electron-builder --win portable"
-  },
-  "keywords": [
-    "electron",
-    "kenshi",
-    "markdown",
-    "llm",
-    "vite",
-    "react"
-  ],
-  "license": "MIT",
-  "type": "module",
-  "engines": {
-    "node": "^20.19.0 || >=22.12.0"
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.13.24",
@@ -41,10 +43,14 @@
     "@vitejs/plugin-react": "^6.0.1",
     "electron": "^41.2.1",
     "electron-builder": "^26.8.1",
-    "oxlint": "^1.60.0",
+    "oxfmt": "^0.72.0",
+    "oxlint": "^1.87.0",
     "typescript": "^6.0.3",
     "vite": "^8.0.8",
     "vite-plugin-electron": "^0.29.1"
+  },
+  "engines": {
+    "node": ">=22.18.0"
   },
   "build": {
     "appId": "jp.prett.kongyo.kenshi.tool",

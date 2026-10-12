@@ -1,12 +1,14 @@
-import { StrictMode } from 'react';
-import { createRoot } from 'react-dom/client';
-import App from './App.tsx';
-import './styles.css';
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
 
-const rootElement = document.getElementById('root');
+import App from "./App.tsx";
+
+import "./styles.css";
+
+const rootElement = document.getElementById("root");
 
 if (!rootElement) {
-  throw new Error('root要素が見つかりません。');
+  throw new Error("root要素が見つかりません。");
 }
 
 createRoot(rootElement).render(
@@ -14,4 +16,3 @@ createRoot(rootElement).render(
     <App />
   </StrictMode>,
 );
-

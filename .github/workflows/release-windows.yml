@@ -3,13 +3,13 @@ name: Release (Windows)
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
   workflow_dispatch:
     inputs:
       tag:
-        description: 'リリースに使用するタグ名 (例: v1.0.0)。未指定の場合は Release 作成をスキップし、成果物のみアップロードします。'
+        description: "リリースに使用するタグ名 (例: v1.0.0)。未指定の場合は Release 作成をスキップし、成果物のみアップロードします。"
         required: false
-        default: ''
+        default: ""
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -29,8 +29,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          cache: 'npm'
+          node-version: "22"
+          cache: "npm"
 
       - name: Install dependencies
         run: npm ci

@@ -1,7 +1,8 @@
-import cx from 'clsx';
-import { CloseIcon } from './Icons.tsx';
+import cx from "clsx";
 
-export type NoticeKind = 'error' | 'info' | 'success' | 'warning';
+import { CloseIcon } from "./Icons.tsx";
+
+export type NoticeKind = "error" | "info" | "success" | "warning";
 
 export interface NoticeState {
   kind: NoticeKind;
@@ -9,10 +10,10 @@ export interface NoticeState {
 }
 
 const noticeClassNames: Record<NoticeKind, string> = {
-  error: 'notice-error',
-  info: 'notice-info',
-  success: 'notice-success',
-  warning: 'notice-warning',
+  error: "notice-error",
+  info: "notice-info",
+  success: "notice-success",
+  warning: "notice-warning",
 };
 
 interface NoticeProps {
@@ -22,8 +23,8 @@ interface NoticeProps {
 
 export const Notice = ({ notice, onDismiss }: NoticeProps) => (
   <div
-    className={cx('notice', noticeClassNames[notice.kind])}
-    role={notice.kind === 'error' ? 'alert' : 'status'}
+    className={cx("notice", noticeClassNames[notice.kind])}
+    role={notice.kind === "error" ? "alert" : "status"}
   >
     <span className="notice-dot" />
     <p className="notice-message">{notice.message}</p>

@@ -5,7 +5,8 @@ import {
   useState,
   useTransition,
   type DragEventHandler,
-} from 'react';
+} from "react";
+
 import {
   CloseIcon,
   DownloadIcon,
@@ -15,22 +16,17 @@ import {
   ModsIcon,
   OverviewIcon,
   SaveIcon,
-} from './components/Icons.tsx';
-import { LoaderPanel } from './components/LoaderPanel.tsx';
-import { Notice, type NoticeState } from './components/Notice.tsx';
-import { Sidebar, type SidebarItem, type ViewId } from './components/Sidebar.tsx';
-import { countProjectStats } from './lib/project-stats.ts';
-import {
-  extractDroppedPaths,
-  formatByteSize,
-  formatNumber,
-  getErrorMessage,
-} from './lib/utils.ts';
-import type { LoadProgress } from './shared/ipc.ts';
-import type { ModProject } from './shared/models.ts';
-import { InspectorView } from './views/InspectorView.tsx';
-import { ModsView } from './views/ModsView.tsx';
-import { OverviewView } from './views/OverviewView.tsx';
+} from "./components/Icons.tsx";
+import { LoaderPanel } from "./components/LoaderPanel.tsx";
+import { Notice, type NoticeState } from "./components/Notice.tsx";
+import { Sidebar, type SidebarItem, type ViewId } from "./components/Sidebar.tsx";
+import { countProjectStats } from "./lib/project-stats.ts";
+import { extractDroppedPaths, formatByteSize, formatNumber, getErrorMessage } from "./lib/utils.ts";
+import type { LoadProgress } from "./shared/ipc.ts";
+import type { ModProject } from "./shared/models.ts";
+import { InspectorView } from "./views/InspectorView.tsx";
+import { ModsView } from "./views/ModsView.tsx";
+import { OverviewView } from "./views/OverviewView.tsx";
 
 const App = () => {
   const [project, setProject] = useState<ModProject | null>(null);
@@ -42,7 +38,7 @@ const App = () => {
   const [referencePaths, setReferencePaths] = useState<string[]>([]);
   const [vanillaDataPath, setVanillaDataPath] = useState<string | null>(null);
   const [lastTargetPaths, setLastTargetPaths] = useState<string[]>([]);
-  const [activeView, setActiveView] = useState<ViewId>('overview');
+  const [activeView, setActiveView] = useState<ViewId>("overview");
   const [loadProgress, setLoadProgress] = useState<LoadProgress | null>(null);
   const [isCopyingMarkdown, setIsCopyingMarkdown] = useState(false);
   const [, startTransition] = useTransition();
@@ -73,10 +69,7 @@ const App = () => {
     return unsubscribe;
   }, []);
 
-  const stats = useMemo(
-    () => (project ? countProjectStats(project) : null),
-    [project],
-  );
+  const stats = useMemo(() => (project ? countProjectStats(project) : null), [project]);
 
   const isBusy = isLoadingProject || isExportingMarkdown || isCopyingMarkdown;
 
@@ -94,8 +87,8 @@ const App = () => {
       setLoadProgress(null);
       setLastExportedPath(null);
       showNotice({
-        kind: 'info',
-        message: 'modを解析しています。',
+        kind: "info",
+        message: "modを解析しています。",
       });
 
       try {
@@ -105,12 +98,12 @@ const App = () => {
         });
         startTransition(() => {
           setProject(loadedProject);
-          setActiveView('overview');
+          setActiveView("overview");
         });
         setLastTargetPaths(paths);
         void window.electronApi.saveLastTargetPaths(paths);
         const emptyTargetMods = loadedProject.mods.filter(
-          (mod) => mod.role === 'target' && mod.recordCount === 0,
+          (mod) => mod.role === "target" && mod.recordCount === 0,
         );
         const summary =
           `${formatNumber(loadedProject.mods.length)} mod / ` +
@@ -118,53 +111,47 @@ const App = () => {
           `${formatNumber(loadedProject.textRecords.length)} 抽出テキスト` +
           (loadedProject.contextRecords.length > 0
             ? ` / 参照 ${formatNumber(loadedProject.contextRecords.length)} レコード`
-            : '') +
-          'を読み込みました。';
+            : "") +
+          "を読み込みました。";
 
         const warnings: string[] = [];
         if (emptyTargetMods.length > 0) {
           const sampleNames = emptyTargetMods
             .slice(0, 3)
             .map((mod) => mod.fileName)
-            .join(', ');
+            .join(", ");
           const more =
-            emptyTargetMods.length > 3
-              ? ` 他 ${formatNumber(emptyTargetMods.length - 3)} 件`
-              : '';
+            emptyTargetMods.length > 3 ? ` 他 ${formatNumber(emptyTargetMods.length - 3)} 件` : "";
           warnings.push(
             `レコード 0 件の mod が ${formatNumber(emptyTargetMods.length)} 件: ${sampleNames}${more}`,
           );
         }
         if (loadedProject.missingReferencePaths.length > 0) {
-          const samplePaths = loadedProject.missingReferencePaths
-            .slice(0, 2)
-            .join(', ');
+          const samplePaths = loadedProject.missingReferencePaths.slice(0, 2).join(", ");
           const more =
             loadedProject.missingReferencePaths.length > 2
               ? ` 他 ${formatNumber(loadedProject.missingReferencePaths.length - 2)} 件`
-              : '';
+              : "";
           warnings.push(
             `読み込めなかった参照パスが ${formatNumber(loadedProject.missingReferencePaths.length)} 件: ${samplePaths}${more}`,
           );
           const missingSet = new Set(loadedProject.missingReferencePaths);
-          setReferencePaths((prev) =>
-            prev.filter((item) => !missingSet.has(item)),
-          );
+          setReferencePaths((prev) => prev.filter((item) => !missingSet.has(item)));
         }
         if (warnings.length > 0) {
           showNotice({
-            kind: 'warning',
-            message: `${summary} なお、${warnings.join(' / ')}。`,
+            kind: "warning",
+            message: `${summary} なお、${warnings.join(" / ")}。`,
           });
         } else {
           showNotice({
-            kind: 'success',
+            kind: "success",
             message: summary,
           });
         }
       } catch (error) {
         showNotice({
-          kind: 'error',
+          kind: "error",
           message: getErrorMessage(error),
         });
       } finally {
@@ -191,14 +178,12 @@ const App = () => {
       return;
     }
 
-    const additions = selectedPaths.filter(
-      (selected) => !referencePaths.includes(selected),
-    );
+    const additions = selectedPaths.filter((selected) => !referencePaths.includes(selected));
     const duplicateCount = selectedPaths.length - additions.length;
 
     if (additions.length === 0) {
       showNotice({
-        kind: 'info',
+        kind: "info",
         message: `選択した ${formatNumber(selectedPaths.length)} 件はすべて既に参照に含まれています。`,
       });
       return;
@@ -214,7 +199,7 @@ const App = () => {
       return next;
     });
     showNotice({
-      kind: 'info',
+      kind: "info",
       message:
         duplicateCount === 0
           ? `参照フォルダを ${formatNumber(additions.length)} 件追加しました。次の読み込みから使用します。`
@@ -225,8 +210,8 @@ const App = () => {
   const handleClearReferencePaths = useCallback(() => {
     setReferencePaths([]);
     showNotice({
-      kind: 'info',
-      message: '参照フォルダ設定を解除しました。',
+      kind: "info",
+      message: "参照フォルダ設定を解除しました。",
     });
   }, [showNotice]);
 
@@ -234,7 +219,7 @@ const App = () => {
     (target: string) => {
       setReferencePaths((prev) => prev.filter((item) => item !== target));
       showNotice({
-        kind: 'info',
+        kind: "info",
         message: `参照から除外しました: ${target}`,
       });
     },
@@ -259,7 +244,7 @@ const App = () => {
     const resolved = targetPath;
     if (referencePaths.includes(resolved)) {
       showNotice({
-        kind: pickedFreshly && !hasGamedata ? 'warning' : 'info',
+        kind: pickedFreshly && !hasGamedata ? "warning" : "info",
         message:
           pickedFreshly && !hasGamedata
             ? `バニラとして保存しましたが gamedata.base が見つかりません: ${resolved} (既に参照済み)`
@@ -268,20 +253,18 @@ const App = () => {
       return;
     }
 
-    setReferencePaths((prev) =>
-      prev.includes(resolved) ? prev : [...prev, resolved],
-    );
+    setReferencePaths((prev) => (prev.includes(resolved) ? prev : [...prev, resolved]));
 
     if (pickedFreshly && !hasGamedata) {
       showNotice({
-        kind: 'warning',
+        kind: "warning",
         message: `バニラを設定して参照に追加しましたが、gamedata.base が見つかりません: ${resolved} — バニラの data フォルダか確認してください。`,
       });
       return;
     }
 
     showNotice({
-      kind: 'success',
+      kind: "success",
       message: pickedFreshly
         ? `バニラを設定して参照に追加しました。次の読み込みから使用します: ${resolved}`
         : `バニラを参照に追加しました。次の読み込みから使用します: ${resolved}`,
@@ -311,12 +294,12 @@ const App = () => {
     });
     if (!pickResult.hasGamedata) {
       showNotice({
-        kind: 'warning',
+        kind: "warning",
         message: `バニラ data を更新しましたが、gamedata.base が見つかりません: ${pickResult.path}`,
       });
     } else {
       showNotice({
-        kind: 'success',
+        kind: "success",
         message: `バニラ data を更新しました: ${pickResult.path}`,
       });
     }
@@ -330,9 +313,9 @@ const App = () => {
 
       if (droppedPaths.length === 0) {
         showNotice({
-          kind: 'error',
+          kind: "error",
           message:
-            'ドラッグ&ドロップからファイルパスを取得できませんでした。選択ボタンを使ってください。',
+            "ドラッグ&ドロップからファイルパスを取得できませんでした。選択ボタンを使ってください。",
         });
         return;
       }
@@ -355,18 +338,18 @@ const App = () => {
     }
     setIsCopyingMarkdown(true);
     showNotice({
-      kind: 'info',
-      message: 'Markdownをクリップボードへコピーしています。',
+      kind: "info",
+      message: "Markdownをクリップボードへコピーしています。",
     });
     try {
       const result = await window.electronApi.copyModMarkdown({ project });
       showNotice({
-        kind: 'success',
+        kind: "success",
         message: `クリップボードへコピーしました (${formatByteSize(result.byteCount)})。LLMへそのままペーストできます。`,
       });
     } catch (error) {
       showNotice({
-        kind: 'error',
+        kind: "error",
         message: `クリップボードへのコピーに失敗しました: ${getErrorMessage(error)}`,
       });
     } finally {
@@ -381,8 +364,8 @@ const App = () => {
 
     setIsExportingMarkdown(true);
     showNotice({
-      kind: 'info',
-      message: 'Markdownを書き出しています。',
+      kind: "info",
+      message: "Markdownを書き出しています。",
     });
 
     try {
@@ -392,24 +375,21 @@ const App = () => {
 
       if (result.canceled) {
         showNotice({
-          kind: 'info',
-          message: 'Markdown書き出しをキャンセルしました。',
+          kind: "info",
+          message: "Markdown書き出しをキャンセルしました。",
         });
         return;
       }
 
       setLastExportedPath(result.filePath);
-      const sizeLabel =
-        result.byteCount !== null
-          ? ` (${formatByteSize(result.byteCount)})`
-          : '';
+      const sizeLabel = result.byteCount !== null ? ` (${formatByteSize(result.byteCount)})` : "";
       showNotice({
-        kind: 'success',
+        kind: "success",
         message: `modデータをMarkdownで保存しました${sizeLabel}: ${result.filePath}`,
       });
     } catch (error) {
       showNotice({
-        kind: 'error',
+        kind: "error",
         message: `Markdown書き出しに失敗しました: ${getErrorMessage(error)}`,
       });
     } finally {
@@ -424,10 +404,10 @@ const App = () => {
   const handleCloseProject = useCallback(() => {
     setProject(null);
     setLastExportedPath(null);
-    setActiveView('overview');
+    setActiveView("overview");
     showNotice({
-      kind: 'info',
-      message: 'プロジェクトを閉じました。',
+      kind: "info",
+      message: "プロジェクトを閉じました。",
     });
   }, [showNotice]);
 
@@ -435,22 +415,22 @@ const App = () => {
     const baseItems: SidebarItem[] = [
       {
         icon: <OverviewIcon />,
-        id: 'overview',
-        label: 'Markdown',
+        id: "overview",
+        label: "Markdown",
       },
       {
         badge: project ? formatNumber(project.inspectorRecords.length) : undefined,
         disabled: !project,
         icon: <InspectorIcon />,
-        id: 'inspector',
-        label: 'インスペクタ',
+        id: "inspector",
+        label: "インスペクタ",
       },
       {
         badge: project ? formatNumber(project.mods.length) : undefined,
         disabled: !project,
         icon: <ModsIcon />,
-        id: 'mods',
-        label: 'mod情報',
+        id: "mods",
+        label: "mod情報",
       },
     ];
 
@@ -505,7 +485,7 @@ const App = () => {
     }
 
     switch (activeView) {
-      case 'overview':
+      case "overview":
         return (
           <OverviewView
             isCopyingMarkdown={isCopyingMarkdown}
@@ -515,20 +495,20 @@ const App = () => {
             onExportMarkdown={() => {
               void handleExportMarkdown();
             }}
-            onJumpToInspector={() => setActiveView('inspector')}
-            onJumpToMods={() => setActiveView('mods')}
+            onJumpToInspector={() => setActiveView("inspector")}
+            onJumpToMods={() => setActiveView("mods")}
             project={project}
             stats={stats}
           />
         );
-      case 'inspector':
+      case "inspector":
         return (
           <InspectorView
             contextRecords={project.contextRecords}
             records={project.inspectorRecords}
           />
         );
-      case 'mods':
+      case "mods":
         return <ModsView mods={project.mods} onRevealFile={handleRevealFile} />;
       default:
         return null;
@@ -551,9 +531,7 @@ const App = () => {
               <>
                 <span className="topbar-project">
                   <strong>{project.sourceModName}</strong>
-                  <span className="topbar-chip">
-                    {formatNumber(project.mods.length)} mod
-                  </span>
+                  <span className="topbar-chip">{formatNumber(project.mods.length)} mod</span>
                   <span className="topbar-chip">
                     {formatNumber(project.textRecords.length)} text
                   </span>
@@ -565,7 +543,7 @@ const App = () => {
                       className="topbar-chip"
                       title={
                         referencePaths.length > 0
-                          ? `参照フォルダ:\n${referencePaths.join('\n')}`
+                          ? `参照フォルダ:\n${referencePaths.join("\n")}`
                           : undefined
                       }
                     >
@@ -575,17 +553,13 @@ const App = () => {
                   {project.missingReferencePaths.length > 0 ? (
                     <span
                       className="topbar-chip topbar-chip-warning"
-                      title={`読み込めなかった参照パス:\n${project.missingReferencePaths.join('\n')}`}
+                      title={`読み込めなかった参照パス:\n${project.missingReferencePaths.join("\n")}`}
                     >
                       欠落 {formatNumber(project.missingReferencePaths.length)}
                     </span>
                   ) : null}
                 </span>
-                <button
-                  className="ghost-button"
-                  onClick={handleCloseProject}
-                  type="button"
-                >
+                <button className="ghost-button" onClick={handleCloseProject} type="button">
                   <CloseIcon height="14" width="14" />
                   閉じる
                 </button>
@@ -617,12 +591,12 @@ const App = () => {
               title={
                 vanillaDataPath
                   ? `バニラ data フォルダ: ${vanillaDataPath}`
-                  : '初回はバニラ data フォルダを選択します'
+                  : "初回はバニラ data フォルダを選択します"
               }
               type="button"
             >
               <FolderIcon height="14" width="14" />
-              {vanillaDataPath ? 'バニラ参照' : 'バニラを設定'}
+              {vanillaDataPath ? "バニラ参照" : "バニラを設定"}
             </button>
             {referencePaths.length > 0 ? (
               <button
@@ -667,7 +641,7 @@ const App = () => {
               type="button"
             >
               <SaveIcon height="14" width="14" />
-              {isCopyingMarkdown ? 'コピー中…' : 'コピー'}
+              {isCopyingMarkdown ? "コピー中…" : "コピー"}
             </button>
             <button
               className="accent-button"
@@ -678,7 +652,7 @@ const App = () => {
               type="button"
             >
               <DownloadIcon height="14" width="14" />
-              {isExportingMarkdown ? '書き出し中…' : 'Markdown書き出し'}
+              {isExportingMarkdown ? "書き出し中…" : "Markdown書き出し"}
             </button>
           </div>
         </header>
@@ -687,7 +661,7 @@ const App = () => {
           <div className="topbar-progress">
             <div className="topbar-progress-info">
               <span className="topbar-progress-label">
-                {loadProgress.phase === 'target' ? '解析中' : '参照を解析中'}
+                {loadProgress.phase === "target" ? "解析中" : "参照を解析中"}
               </span>
               <span className="topbar-progress-counter">
                 {formatNumber(loadProgress.current)} / {formatNumber(loadProgress.total)}

@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 export const dialogTextSchema = z.object({
   original: z.string(),
@@ -21,16 +21,16 @@ const baseTextRecordSchema = z.object({
 });
 
 export const dialogRecordSchema = baseTextRecordSchema.extend({
-  kind: z.literal('dialog'),
+  kind: z.literal("dialog"),
   texts: z.array(dialogTextSchema),
 });
 
 export const entityRecordSchema = baseTextRecordSchema.extend({
   description: z.string(),
-  kind: z.literal('entity'),
+  kind: z.literal("entity"),
 });
 
-export const textRecordSchema = z.discriminatedUnion('kind', [
+export const textRecordSchema = z.discriminatedUnion("kind", [
   dialogRecordSchema,
   entityRecordSchema,
 ]);
@@ -135,7 +135,7 @@ export const loadedModSchema = z.object({
   filePath: z.string(),
   header: modHeaderSchema,
   recordCount: z.number().int(),
-  role: z.enum(['target', 'reference']),
+  role: z.enum(["target", "reference"]),
 });
 
 export const modProjectSchema = z.object({

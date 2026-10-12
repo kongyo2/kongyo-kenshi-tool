@@ -1,20 +1,16 @@
-import {
-  useDeferredValue,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
-import cx from 'clsx';
+import { useVirtualizer } from "@tanstack/react-virtual";
+import cx from "clsx";
+import { useDeferredValue, useMemo, useRef, useState } from "react";
+
+import { formatNumber, normaliseSearchTarget } from "../lib/utils.ts";
 import {
   getItemCategory,
   getItemTypeEnglishName,
   getItemTypeLabel,
   itemCategoryLabels,
   type ItemCategory,
-} from '../shared/item-types.ts';
-import type { InspectorRecord } from '../shared/models.ts';
-import { formatNumber, normaliseSearchTarget } from '../lib/utils.ts';
+} from "../shared/item-types.ts";
+import type { InspectorRecord } from "../shared/models.ts";
 
 interface InspectorViewProps {
   contextRecords: readonly InspectorRecord[];
@@ -32,17 +28,17 @@ const gatherCategories = (records: readonly InspectorRecord[]) => {
 const filterRecords = (
   records: readonly InspectorRecord[],
   search: string,
-  category: 'all' | ItemCategory,
-  modName: 'all' | string,
+  category: "all" | ItemCategory,
+  modName: "all" | string,
 ) => {
   const searchToken = normaliseSearchTarget(search.trim());
 
   return records.filter((record) => {
-    if (modName !== 'all' && record.modName !== modName) {
+    if (modName !== "all" && record.modName !== modName) {
       return false;
     }
 
-    if (category !== 'all' && getItemCategory(record.type) !== category) {
+    if (category !== "all" && getItemCategory(record.type) !== category) {
       return false;
     }
 
@@ -51,12 +47,9 @@ const filterRecords = (
     }
 
     const haystack = normaliseSearchTarget(
-      [
-        record.name,
-        record.stringId,
-        record.modName,
-        getItemTypeEnglishName(record.type),
-      ].join('\n'),
+      [record.name, record.stringId, record.modName, getItemTypeEnglishName(record.type)].join(
+        "\n",
+      ),
     );
 
     if (haystack.includes(searchToken)) {
@@ -64,9 +57,7 @@ const filterRecords = (
     }
 
     for (const entry of record.strings) {
-      const stringHaystack = normaliseSearchTarget(
-        `${entry.key}\n${entry.value}`,
-      );
+      const stringHaystack = normaliseSearchTarget(`${entry.key}\n${entry.value}`);
       if (stringHaystack.includes(searchToken)) {
         return true;
       }
@@ -81,40 +72,30 @@ const formatNumberValue = (value: number) => {
   return Number.isInteger(rounded) ? rounded.toFixed(1) : String(rounded);
 };
 
-export const InspectorView = ({
-  contextRecords,
-  records,
-}: InspectorViewProps) => {
-  const [searchText, setSearchText] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState<'all' | ItemCategory>(
-    'all',
-  );
-  const [modFilter, setModFilter] = useState<'all' | string>('all');
+export const InspectorView = ({ contextRecords, records }: InspectorViewProps) => {
+  const [searchText, setSearchText] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<"all" | ItemCategory>("all");
+  const [modFilter, setModFilter] = useState<"all" | string>("all");
   const [includeContextRecords, setIncludeContextRecords] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const deferredSearch = useDeferredValue(searchText);
   const visibleRecords = useMemo(
-    () =>
-      includeContextRecords ? [...records, ...contextRecords] : [...records],
+    () => (includeContextRecords ? [...records, ...contextRecords] : [...records]),
     [contextRecords, includeContextRecords, records],
   );
 
-  const availableCategories = useMemo(
-    () => gatherCategories(visibleRecords),
-    [visibleRecords],
-  );
+  const availableCategories = useMemo(() => gatherCategories(visibleRecords), [visibleRecords]);
   const availableMods = useMemo(() => {
     const names = new Set<string>();
     for (const record of visibleRecords) {
       names.add(record.modName);
     }
-    return Array.from(names).sort((a, b) => a.localeCompare(b, 'ja'));
+    return Array.from(names).sort((a, b) => a.localeCompare(b, "ja"));
   }, [visibleRecords]);
 
   const filteredRecords = useMemo(
-    () =>
-      filterRecords(visibleRecords, deferredSearch, categoryFilter, modFilter),
+    () => filterRecords(visibleRecords, deferredSearch, categoryFilter, modFilter),
     [categoryFilter, deferredSearch, modFilter, visibleRecords],
   );
 
@@ -140,11 +121,11 @@ export const InspectorView = ({
           <p className="eyebrow">modインスペクタ</p>
           <h1 className="view-title">レコードブラウザ</h1>
           <p className="view-subtitle">
-            対象 {formatNumber(records.length)} レコード中{' '}
-            {formatNumber(filteredRecords.length)} 件を表示
+            対象 {formatNumber(records.length)} レコード中 {formatNumber(filteredRecords.length)}{" "}
+            件を表示
             {includeContextRecords && contextRecords.length > 0
               ? ` / 参照 ${formatNumber(contextRecords.length)} レコード込み`
-              : ''}
+              : ""}
           </p>
         </div>
       </div>
@@ -162,9 +143,7 @@ export const InspectorView = ({
             <label className="toggle-inline">
               <input
                 checked={includeContextRecords}
-                onChange={(event) =>
-                  setIncludeContextRecords(event.target.checked)
-                }
+                onChange={(event) => setIncludeContextRecords(event.target.checked)}
                 type="checkbox"
               />
               参照レコードも表示
@@ -173,9 +152,7 @@ export const InspectorView = ({
           <label className="select-field">
             <span>mod</span>
             <select
-              onChange={(event) =>
-                setModFilter(event.target.value as 'all' | string)
-              }
+              onChange={(event) => setModFilter(event.target.value as "all" | string)}
               value={modFilter}
             >
               <option value="all">すべて ({formatNumber(availableMods.length)})</option>
@@ -189,9 +166,7 @@ export const InspectorView = ({
           <label className="select-field">
             <span>カテゴリ</span>
             <select
-              onChange={(event) =>
-                setCategoryFilter(event.target.value as 'all' | ItemCategory)
-              }
+              onChange={(event) => setCategoryFilter(event.target.value as "all" | ItemCategory)}
               value={categoryFilter}
             >
               <option value="all">すべて</option>
@@ -206,9 +181,7 @@ export const InspectorView = ({
       </div>
 
       {filteredRecords.length === 0 ? (
-        <div className="empty-state">
-          条件に一致するレコードがありません。
-        </div>
+        <div className="empty-state">条件に一致するレコードがありません。</div>
       ) : (
         <div className="inspector-list" ref={listRef}>
           <div
@@ -222,11 +195,9 @@ export const InspectorView = ({
 
               return (
                 <article
-                  className={cx(
-                    'inspector-card',
-                    `category-${category}`,
-                    { 'is-expanded': isExpanded },
-                  )}
+                  className={cx("inspector-card", `category-${category}`, {
+                    "is-expanded": isExpanded,
+                  })}
                   data-index={virtualItem.index}
                   key={record.uid}
                   ref={virtualizer.measureElement}
@@ -240,24 +211,18 @@ export const InspectorView = ({
                     type="button"
                   >
                     <div className="inspector-card-primary">
-                      <span
-                        className={`entry-category category-${category}`}
-                      >
+                      <span className={`entry-category category-${category}`}>
                         {itemCategoryLabels[category]}
                       </span>
-                      <span className="entry-token">
-                        {getItemTypeLabel(record.type)}
-                      </span>
+                      <span className="entry-token">{getItemTypeLabel(record.type)}</span>
                       <span className="entry-token entry-token-mono">
                         {getItemTypeEnglishName(record.type)}
                       </span>
-                      <span className="entry-token entry-token-mono">
-                        {record.stringId}
-                      </span>
+                      <span className="entry-token entry-token-mono">{record.stringId}</span>
                       <span className="entry-token">{record.modName}</span>
                     </div>
                     <h3 className="inspector-card-name">
-                      {record.name.length === 0 ? '(名前なし)' : record.name}
+                      {record.name.length === 0 ? "(名前なし)" : record.name}
                     </h3>
                     <div className="inspector-counts">
                       <span>文字列 {formatNumber(record.counts.strings)}</span>
@@ -271,30 +236,21 @@ export const InspectorView = ({
                         参照 {formatNumber(record.counts.references)}(
                         {formatNumber(record.counts.referenceCategories)})
                       </span>
-                      <span>
-                        配置 {formatNumber(record.counts.instances)}
-                      </span>
+                      <span>配置 {formatNumber(record.counts.instances)}</span>
                     </div>
                   </button>
                   {isExpanded ? (
                     <div className="inspector-card-body">
                       <h4>文字列フィールド</h4>
                       {record.strings.length === 0 ? (
-                        <p className="subtle-text">
-                          文字列フィールドはありません。
-                        </p>
+                        <p className="subtle-text">文字列フィールドはありません。</p>
                       ) : (
                         <ul className="string-list">
                           {record.strings.map((entry, entryIndex) => (
-                            <li
-                              className="string-list-row"
-                              key={`${entry.key}:${entryIndex}`}
-                            >
+                            <li className="string-list-row" key={`${entry.key}:${entryIndex}`}>
                               <span className="string-key">{entry.key}</span>
                               <pre className="string-value">
-                                {entry.value.length === 0
-                                  ? '(空文字)'
-                                  : entry.value}
+                                {entry.value.length === 0 ? "(空文字)" : entry.value}
                               </pre>
                             </li>
                           ))}
@@ -304,27 +260,17 @@ export const InspectorView = ({
                       {record.values.bools.length === 0 &&
                       record.values.ints.length === 0 &&
                       record.values.floats.length === 0 ? (
-                        <p className="subtle-text">
-                          bool / int / float フィールドはありません。
-                        </p>
+                        <p className="subtle-text">bool / int / float フィールドはありません。</p>
                       ) : (
                         <ul className="string-list">
                           {record.values.bools.map((entry, entryIndex) => (
-                            <li
-                              className="string-list-row"
-                              key={`bool:${entry.key}:${entryIndex}`}
-                            >
+                            <li className="string-list-row" key={`bool:${entry.key}:${entryIndex}`}>
                               <span className="string-key">{entry.key}</span>
-                              <pre className="string-value">
-                                {entry.value ? 'true' : 'false'}
-                              </pre>
+                              <pre className="string-value">{entry.value ? "true" : "false"}</pre>
                             </li>
                           ))}
                           {record.values.ints.map((entry, entryIndex) => (
-                            <li
-                              className="string-list-row"
-                              key={`int:${entry.key}:${entryIndex}`}
-                            >
+                            <li className="string-list-row" key={`int:${entry.key}:${entryIndex}`}>
                               <span className="string-key">{entry.key}</span>
                               <pre className="string-value">{entry.value}</pre>
                             </li>
@@ -335,9 +281,7 @@ export const InspectorView = ({
                               key={`float:${entry.key}:${entryIndex}`}
                             >
                               <span className="string-key">{entry.key}</span>
-                              <pre className="string-value">
-                                {formatNumberValue(entry.value)}
-                              </pre>
+                              <pre className="string-value">{formatNumberValue(entry.value)}</pre>
                             </li>
                           ))}
                         </ul>
@@ -353,25 +297,19 @@ export const InspectorView = ({
                               >
                                 <span className="string-key">{entry.key}</span>
                                 <pre className="string-value">
-                                  {entry.value.length === 0
-                                    ? '(空文字)'
-                                    : entry.value}
+                                  {entry.value.length === 0 ? "(空文字)" : entry.value}
                                 </pre>
                               </li>
                             ))}
                           </ul>
                         </>
                       ) : null}
-                      {record.values.vector3s.length > 0 ||
-                      record.values.vector4s.length > 0 ? (
+                      {record.values.vector3s.length > 0 || record.values.vector4s.length > 0 ? (
                         <>
                           <h4>ベクトルフィールド</h4>
                           <ul className="string-list">
                             {record.values.vector3s.map((entry, entryIndex) => (
-                              <li
-                                className="string-list-row"
-                                key={`v3:${entry.key}:${entryIndex}`}
-                              >
+                              <li className="string-list-row" key={`v3:${entry.key}:${entryIndex}`}>
                                 <span className="string-key">{entry.key}</span>
                                 <pre className="string-value">
                                   {`x=${formatNumberValue(entry.x)}, y=${formatNumberValue(entry.y)}, z=${formatNumberValue(entry.z)}`}
@@ -379,10 +317,7 @@ export const InspectorView = ({
                               </li>
                             ))}
                             {record.values.vector4s.map((entry, entryIndex) => (
-                              <li
-                                className="string-list-row"
-                                key={`v4:${entry.key}:${entryIndex}`}
-                              >
+                              <li className="string-list-row" key={`v4:${entry.key}:${entryIndex}`}>
                                 <span className="string-key">{entry.key}</span>
                                 <pre className="string-value">
                                   {`x=${formatNumberValue(entry.x)}, y=${formatNumberValue(entry.y)}, z=${formatNumberValue(entry.z)}, w=${formatNumberValue(entry.w)}`}
@@ -396,28 +331,24 @@ export const InspectorView = ({
                         <>
                           <h4>参照カテゴリ</h4>
                           <ul className="string-list">
-                            {record.referenceCategories.map(
-                              (referenceCategory, categoryIndex) => (
-                                <li
-                                  className="string-list-row"
-                                  key={`ref:${referenceCategory.name}:${categoryIndex}`}
-                                >
-                                  <span className="string-key">
-                                    {referenceCategory.name}
-                                  </span>
-                                  <pre className="string-value">
-                                    {referenceCategory.references.length === 0
-                                      ? '(参照なし)'
-                                      : referenceCategory.references
-                                          .map(
-                                            (reference) =>
-                                              `${reference.targetId} (v0=${reference.value0}, v1=${reference.value1}, v2=${reference.value2})`,
-                                          )
-                                          .join('\n')}
-                                  </pre>
-                                </li>
-                              ),
-                            )}
+                            {record.referenceCategories.map((referenceCategory, categoryIndex) => (
+                              <li
+                                className="string-list-row"
+                                key={`ref:${referenceCategory.name}:${categoryIndex}`}
+                              >
+                                <span className="string-key">{referenceCategory.name}</span>
+                                <pre className="string-value">
+                                  {referenceCategory.references.length === 0
+                                    ? "(参照なし)"
+                                    : referenceCategory.references
+                                        .map(
+                                          (reference) =>
+                                            `${reference.targetId} (v0=${reference.value0}, v1=${reference.value1}, v2=${reference.value2})`,
+                                        )
+                                        .join("\n")}
+                                </pre>
+                              </li>
+                            ))}
                           </ul>
                         </>
                       ) : null}
@@ -425,31 +356,25 @@ export const InspectorView = ({
                         <>
                           <h4>インスタンス</h4>
                           <ul className="string-list">
-                            {record.values.instances.map(
-                              (entry, entryIndex) => (
-                                <li
-                                  className="string-list-row"
-                                  key={`instance:${entry.key}:${entryIndex}`}
-                                >
-                                  <span className="string-key">
-                                    {entry.key}
-                                  </span>
-                                  <pre className="string-value">
-                                    {[
-                                      `target=${entry.targetId}`,
-                                      `values=${entry.values
-                                        .map(formatNumberValue)
-                                        .join(', ')}`,
-                                      entry.states.length > 0
-                                        ? `states=${entry.states.join(', ')}`
-                                        : '',
-                                    ]
-                                      .filter((part) => part.length > 0)
-                                      .join('\n')}
-                                  </pre>
-                                </li>
-                              ),
-                            )}
+                            {record.values.instances.map((entry, entryIndex) => (
+                              <li
+                                className="string-list-row"
+                                key={`instance:${entry.key}:${entryIndex}`}
+                              >
+                                <span className="string-key">{entry.key}</span>
+                                <pre className="string-value">
+                                  {[
+                                    `target=${entry.targetId}`,
+                                    `values=${entry.values.map(formatNumberValue).join(", ")}`,
+                                    entry.states.length > 0
+                                      ? `states=${entry.states.join(", ")}`
+                                      : "",
+                                  ]
+                                    .filter((part) => part.length > 0)
+                                    .join("\n")}
+                                </pre>
+                              </li>
+                            ))}
                           </ul>
                         </>
                       ) : null}

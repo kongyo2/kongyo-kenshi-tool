@@ -1,9 +1,6 @@
-import {
-  buildCategoryBreakdown,
-  type ProjectStats,
-} from '../lib/project-stats.ts';
-import { formatNumber } from '../lib/utils.ts';
-import type { ModProject } from '../shared/models.ts';
+import { buildCategoryBreakdown, type ProjectStats } from "../lib/project-stats.ts";
+import { formatNumber } from "../lib/utils.ts";
+import type { ModProject } from "../shared/models.ts";
 
 interface OverviewViewProps {
   isCopyingMarkdown: boolean;
@@ -27,7 +24,7 @@ export const OverviewView = ({
   const breakdown = buildCategoryBreakdown(project.inspectorRecords);
   const totalRecords = project.inspectorRecords.length;
   const defaultFileName = `${project.sourceModName}_mod_data.md`;
-  const targetModCount = project.mods.filter((mod) => mod.role === 'target').length;
+  const targetModCount = project.mods.filter((mod) => mod.role === "target").length;
   const referenceModCount = project.mods.length - targetModCount;
 
   return (
@@ -37,11 +34,11 @@ export const OverviewView = ({
           <p className="eyebrow">Markdown export</p>
           <h1 className="view-title">LLM向けmodダンプ</h1>
           <p className="view-subtitle">
-            対象 {formatNumber(project.inspectorRecords.length)} レコードを解析し、
-            Kenshi の内容を Markdown へまとめます。
+            対象 {formatNumber(project.inspectorRecords.length)} レコードを解析し、 Kenshi の内容を
+            Markdown へまとめます。
             {project.contextRecords.length > 0
               ? ` 参照 ${formatNumber(project.contextRecords.length)} レコードは解決用に使います。`
-              : ''}
+              : ""}
           </p>
         </div>
       </div>
@@ -49,37 +46,29 @@ export const OverviewView = ({
       <section className="stat-grid">
         <article className="stat-card stat-primary">
           <span className="stat-label">抽出テキスト</span>
-          <strong className="stat-value">
-            {formatNumber(stats.textRecordCount)}
-          </strong>
+          <strong className="stat-value">{formatNumber(stats.textRecordCount)}</strong>
           <span className="stat-sub">
-            ダイアログ {formatNumber(stats.dialogRecordCount)} 件 / エンティティ{' '}
+            ダイアログ {formatNumber(stats.dialogRecordCount)} 件 / エンティティ{" "}
             {formatNumber(stats.entityRecordCount)} 件
           </span>
         </article>
         <article className="stat-card">
           <span className="stat-label">ダイアログ行数</span>
-          <strong className="stat-value">
-            {formatNumber(stats.dialogLineCount)}
-          </strong>
+          <strong className="stat-value">{formatNumber(stats.dialogLineCount)}</strong>
           <span className="stat-sub">text* フィールドを集計</span>
         </article>
         <article className="stat-card">
           <span className="stat-label">総レコード数</span>
-          <strong className="stat-value">
-            {formatNumber(stats.recordCount)}
-          </strong>
+          <strong className="stat-value">{formatNumber(stats.recordCount)}</strong>
           <span className="stat-sub">
             全 string フィールド {formatNumber(stats.stringFieldCount)} 件
           </span>
         </article>
         <article className="stat-card">
           <span className="stat-label">mod数</span>
-          <strong className="stat-value">
-            {formatNumber(targetModCount)}
-          </strong>
+          <strong className="stat-value">{formatNumber(targetModCount)}</strong>
           <span className="stat-sub">
-            参照 {formatNumber(referenceModCount)} / 依存関係{' '}
+            参照 {formatNumber(referenceModCount)} / 依存関係{" "}
             {formatNumber(project.dependencies.length)} 件
           </span>
         </article>
@@ -97,14 +86,12 @@ export const OverviewView = ({
             <li>mod ヘッダ、依存関係、カテゴリ別・type別の集計</li>
             <li>string を持つレコードだけを絞ったフルダンプと非文字列フィールド件数</li>
             <li>会話文、説明文、名前だけの entity 一覧をまとめた抽出テキストセクション</li>
-            <li>標準出力ファイル名は <code>{defaultFileName}</code></li>
+            <li>
+              標準出力ファイル名は <code>{defaultFileName}</code>
+            </li>
           </ul>
           <div className="action-stack">
-            <button
-              className="primary-button"
-              onClick={onExportMarkdown}
-              type="button"
-            >
+            <button className="primary-button" onClick={onExportMarkdown} type="button">
               Markdownを書き出す
             </button>
             <button
@@ -114,20 +101,12 @@ export const OverviewView = ({
               title="保存ダイアログを介さずクリップボードへコピー (LLMへ直接ペースト用)"
               type="button"
             >
-              {isCopyingMarkdown ? 'コピー中…' : 'クリップボードへコピー'}
+              {isCopyingMarkdown ? "コピー中…" : "クリップボードへコピー"}
             </button>
-            <button
-              className="secondary-button"
-              onClick={onJumpToInspector}
-              type="button"
-            >
+            <button className="secondary-button" onClick={onJumpToInspector} type="button">
               レコードを確認
             </button>
-            <button
-              className="secondary-button"
-              onClick={onJumpToMods}
-              type="button"
-            >
+            <button className="secondary-button" onClick={onJumpToMods} type="button">
               mod情報を確認
             </button>
           </div>
@@ -136,9 +115,7 @@ export const OverviewView = ({
         <section className="panel">
           <header className="panel-header">
             <h2 className="panel-title">カテゴリ別レコード内訳</h2>
-            <p className="panel-description">
-              詳細はインスペクタで検索・展開できます。
-            </p>
+            <p className="panel-description">詳細はインスペクタで検索・展開できます。</p>
           </header>
           <ul className="category-list">
             {breakdown.map((entry) => (
@@ -149,16 +126,11 @@ export const OverviewView = ({
                   <span
                     className={`category-bar-fill category-${entry.category}`}
                     style={{
-                      width:
-                        totalRecords === 0
-                          ? '0%'
-                          : `${(entry.count / totalRecords) * 100}%`,
+                      width: totalRecords === 0 ? "0%" : `${(entry.count / totalRecords) * 100}%`,
                     }}
                   />
                 </span>
-                <span className="category-count">
-                  {formatNumber(entry.count)}
-                </span>
+                <span className="category-count">{formatNumber(entry.count)}</span>
               </li>
             ))}
             {breakdown.length === 0 ? (

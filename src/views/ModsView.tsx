@@ -1,5 +1,5 @@
-import type { LoadedMod } from '../shared/models.ts';
-import { formatNumber } from '../lib/utils.ts';
+import { formatNumber } from "../lib/utils.ts";
+import type { LoadedMod } from "../shared/models.ts";
 
 interface ModsViewProps {
   mods: readonly LoadedMod[];
@@ -13,11 +13,8 @@ export const ModsView = ({ mods, onRevealFile }: ModsViewProps) => (
         <p className="eyebrow">mod情報</p>
         <h1 className="view-title">読み込み済みmod</h1>
         <p className="view-subtitle">
-          {formatNumber(mods.length)}個のmodファイル / 合計{' '}
-          {formatNumber(
-            mods.reduce((total, mod) => total + mod.recordCount, 0),
-          )}{' '}
-          レコード
+          {formatNumber(mods.length)}個のmodファイル / 合計{" "}
+          {formatNumber(mods.reduce((total, mod) => total + mod.recordCount, 0))} レコード
         </p>
       </div>
     </div>
@@ -31,20 +28,14 @@ export const ModsView = ({ mods, onRevealFile }: ModsViewProps) => (
             <header className="mod-card-header">
               <h2 className="mod-card-name">{mod.fileName}</h2>
               <span className="mod-card-badges">
-                <span className="mod-card-type">
-                  {mod.role === 'target' ? '対象' : '参照'}
-                </span>
-                <span className="mod-card-type">
-                  fileType {mod.header.fileType}
-                </span>
+                <span className="mod-card-type">{mod.role === "target" ? "対象" : "参照"}</span>
+                <span className="mod-card-type">fileType {mod.header.fileType}</span>
               </span>
             </header>
             <dl className="mod-card-list">
               <div>
                 <dt>作者</dt>
-                <dd>
-                  {mod.header.author.length > 0 ? mod.header.author : '—'}
-                </dd>
+                <dd>{mod.header.author.length > 0 ? mod.header.author : "—"}</dd>
               </div>
               <div>
                 <dt>バージョン</dt>
@@ -57,24 +48,18 @@ export const ModsView = ({ mods, onRevealFile }: ModsViewProps) => (
               <div>
                 <dt>依存mod</dt>
                 <dd>
-                  {mod.header.dependencies.length === 0
-                    ? 'なし'
-                    : mod.header.dependencies.length}
+                  {mod.header.dependencies.length === 0 ? "なし" : mod.header.dependencies.length}
                 </dd>
               </div>
               <div>
                 <dt>参照mod</dt>
                 <dd>
-                  {mod.header.references.length === 0
-                    ? 'なし'
-                    : mod.header.references.length}
+                  {mod.header.references.length === 0 ? "なし" : mod.header.references.length}
                 </dd>
               </div>
             </dl>
             {mod.header.description.length > 0 ? (
-              <p className="mod-card-description">
-                {mod.header.description}
-              </p>
+              <p className="mod-card-description">{mod.header.description}</p>
             ) : null}
             {mod.header.dependencies.length > 0 ? (
               <div className="mod-card-tags">

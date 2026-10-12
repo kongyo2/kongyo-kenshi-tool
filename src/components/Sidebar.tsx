@@ -1,7 +1,7 @@
-import cx from 'clsx';
-import type { ReactNode } from 'react';
+import cx from "clsx";
+import type { ReactNode } from "react";
 
-export type ViewId = 'inspector' | 'mods' | 'overview';
+export type ViewId = "inspector" | "mods" | "overview";
 
 export interface SidebarItem {
   badge?: string;
@@ -29,10 +29,10 @@ export const Sidebar = ({ activeId, items, onSelect }: SidebarProps) => (
     <nav className="sidebar-nav">
       {items.map((item) => (
         <button
-          aria-current={activeId === item.id ? 'page' : undefined}
-          className={cx('sidebar-nav-item', {
-            'is-active': activeId === item.id,
-            'is-disabled': item.disabled,
+          aria-current={activeId === item.id ? "page" : undefined}
+          className={cx("sidebar-nav-item", {
+            "is-active": activeId === item.id,
+            "is-disabled": item.disabled,
           })}
           disabled={item.disabled}
           key={item.id}
@@ -43,17 +43,13 @@ export const Sidebar = ({ activeId, items, onSelect }: SidebarProps) => (
         >
           <span className="sidebar-nav-icon">{item.icon}</span>
           <span className="sidebar-nav-label">{item.label}</span>
-          {item.badge ? (
-            <span className="sidebar-nav-badge">{item.badge}</span>
-          ) : null}
+          {item.badge ? <span className="sidebar-nav-badge">{item.badge}</span> : null}
         </button>
       ))}
     </nav>
     <div className="sidebar-footer">
       <span className="sidebar-footer-title">OpenConstructionSet準拠</span>
-      <span className="sidebar-footer-text">
-        ItemType 128種対応 / fileType 16 &amp; 17
-      </span>
+      <span className="sidebar-footer-text">ItemType 128種対応 / fileType 16 &amp; 17</span>
     </div>
   </aside>
 );
