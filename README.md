@@ -11,6 +11,8 @@ Kenshi の `.mod` を解析し、LLM に渡しやすい Markdown に変換する
 
 ## スクリーンショット
 
+デモ用に作ったサンプルの mod データを読み込んだ画面です。
+
 ![Markdown 書き出し画面](docs/screenshots/markdown.png)
 
 ![mod情報画面](docs/screenshots/mod-info.png)
