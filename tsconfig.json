@@ -14,10 +14,10 @@
     "useDefineForClassFields": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
     "jsx": "react-jsx",
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "types": ["vite/client", "node"]
   },
-  "include": ["src", "electron", "vite.config.ts"]
+  "include": ["src", "electron", "scripts", "test", "vite.config.ts"]
 }
-

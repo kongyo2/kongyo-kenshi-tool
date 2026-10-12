@@ -1,20 +1,21 @@
 {
-  "plugins": ["promise", "import", "node"],
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "import", "promise", "node"],
   "categories": {
     "correctness": "error",
-    "suspicious": "warn"
+    "suspicious": "warn",
+    "perf": "warn",
+    "style": "off",
+    "pedantic": "off"
   },
   "rules": {
-    "import/no-unassigned-import": "off",
-    "no-console": "warn",
-    "typescript/no-explicit-any": "error"
+    "no-console": "off",
+    "import/no-unassigned-import": [
+      "warn",
+      {
+        "allow": ["**/*.css"]
+      }
+    ]
   },
-  "ignorePatterns": [
-    "node_modules",
-    "dist",
-    "dist-electron",
-    "release",
-    "coverage",
-    "*.min.js"
-  ]
+  "ignorePatterns": ["node_modules", "dist", "build", "coverage", "*.min.js"]
 }
