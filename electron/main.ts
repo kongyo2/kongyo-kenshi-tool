@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { lstat, readdir, readFile, writeFile } from "node:fs/promises";
+import { lstat, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -327,6 +327,18 @@ const renderSessionMarkdown = (session: ProjectSession, options: ExportOptions) 
   return { markdown, sections, stats: measureText(markdown) };
 };
 
+/** 書き込み途中で失敗しても既存のファイルを壊さないよう、同じフォルダの一時ファイルに書いてから置き換える。 */
+const writeFileAtomically = async (filePath: string, content: string) => {
+  const temporaryPath = `${filePath}.${process.pid}.tmp`;
+  try {
+    await writeFile(temporaryPath, content, "utf-8");
+    await rename(temporaryPath, filePath);
+  } catch (error) {
+    await rm(temporaryPath, { force: true });
+    throw error;
+  }
+};
+
 const toVanillaPickResult = async (dataPath: string) => {
   const saved = await saveAppSettings({ vanillaDataPath: dataPath });
   return {
@@ -426,7 +438,7 @@ const registerIpc = () => {
     }
 
     const { markdown, stats } = renderSessionMarkdown(session, input.options);
-    await writeFile(dialogResult.filePath, markdown, "utf-8");
+    await writeFileAtomically(dialogResult.filePath, markdown);
 
     return exportModMarkdownResponseSchema.parse({
       ...stats,

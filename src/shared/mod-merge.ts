@@ -4,7 +4,7 @@
 // - 参照はカテゴリ + 参照先 ID ごとに追加 / 値の更新 / 削除 (v0〜v2 がすべて int.MaxValue)
 // - インスタンスは ID ごとに追加 / 更新 / 削除 (参照先が空)
 // - REMOVED フラグが立ったレコードは削除済み
-import { isRemovedReference } from "./mod-format.ts";
+import { isRemovedReference, removedItemFlagKeys } from "./mod-format.ts";
 import type { InspectorRecord, ReferenceCategory } from "./models.ts";
 
 export type RecordValueKind = "bool" | "file" | "float" | "int" | "string" | "vec3" | "vec4";
@@ -167,7 +167,8 @@ export const mergeTwoRecords = (
     modName: overlay.modName,
     name: overlay.name,
     referenceCategories,
-    removed: base.removed || overlay.removed,
+    // 後の層が REMOVED=false を書いて復元することもあるので、合成後の値から決める
+    removed: values.bools.some((entry) => entry.value && removedItemFlagKeys.has(entry.key)),
     saveData: overlay.saveData,
     stringId: overlay.stringId,
     strings,

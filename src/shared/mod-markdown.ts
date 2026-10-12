@@ -29,7 +29,7 @@ import {
   itemCategoryLabels,
   type ItemCategory,
 } from "./item-types.ts";
-import { isRemovedReference } from "./mod-format.ts";
+import { isRemovedReference, removedItemFlagKeys } from "./mod-format.ts";
 import {
   buildRecordIndexes,
   findRecordValue,
@@ -460,16 +460,20 @@ const isFieldDefaultValue = (
  * - 新規レコード: 既定値を省略
  * - 変更レコード: 書き込まれている値はすべて上書きなので省略せず、元の値があれば併記
  */
+interface RecordValueOptions {
+  base?: InspectorRecord;
+  omitKeys?: ReadonlySet<string>;
+  preferredOrder?: readonly string[];
+  /** 省略時はレコードの変更種別から判断する (新規以外は上書きとして全値を表示)。 */
+  treatAsOverride?: boolean;
+}
+
 const formatRecordValues = (
   ctx: RenderContext,
   record: InspectorRecord,
-  options: {
-    base?: InspectorRecord;
-    omitKeys?: ReadonlySet<string>;
-    preferredOrder?: readonly string[];
-  } = {},
+  options: RecordValueOptions = {},
 ) => {
-  const isOverride = record.saveData.changeTypeName !== "New";
+  const isOverride = options.treatAsOverride ?? record.saveData.changeTypeName !== "New";
   const preferredIndex = new Map((options.preferredOrder ?? []).map((key, index) => [key, index]));
   let omittedDefaults = 0;
 
@@ -477,7 +481,10 @@ const formatRecordValues = (
     if (entry.kind === "string" || entry.kind === "file") {
       return false;
     }
-    if (options.omitKeys?.has(entry.key) || (entry.kind === "bool" && entry.key === "REMOVED")) {
+    if (
+      options.omitKeys?.has(entry.key) ||
+      (entry.kind === "bool" && removedItemFlagKeys.has(entry.key))
+    ) {
       return false;
     }
     if (!isOverride && isDefaultValue(ctx, record.type, entry)) {
@@ -513,6 +520,30 @@ const formatRecordValues = (
   });
 
   return { omittedDefaults, text: parts.join(" · ") };
+};
+
+/**
+ * ダイアログ系レコードの設定値。既存レコードを変更する mod なら、その mod が書き込んだ値だけを
+ * (参照コンテキストがあれば元の値付きで) 示す。ベースから引き継いだ値をこの mod の設定として出さない。
+ * それ以外 (新規レコード、参照コンテキストの行) は合成済みの値から既定値を省いて示す。
+ */
+const formatDialogSettings = (
+  ctx: RenderContext,
+  effective: InspectorRecord,
+  diff: InspectorRecord | undefined,
+  base: InspectorRecord | undefined,
+  options: Omit<RecordValueOptions, "base" | "treatAsOverride">,
+) => {
+  if (diff && diff.saveData.changeTypeName !== "New") {
+    return {
+      ...formatRecordValues(ctx, diff, { ...options, base }),
+      label: "Settings changed by this mod",
+    };
+  }
+  return {
+    ...formatRecordValues(ctx, effective, { ...options, treatAsOverride: false }),
+    label: "Settings",
+  };
 };
 
 // --- 参照 -------------------------------------------------------------------------
@@ -1737,15 +1768,15 @@ const renderDialogueLineNode = (
   }
 
   renderLineTexts(lines, ctx, lineRecord, childIndent);
-  const settings = formatRecordValues(ctx, lineRecord, {
+  const base = targetRecord ? getComparisonBase(ctx, targetRecord) : undefined;
+  const settings = formatDialogSettings(ctx, lineRecord, targetRecord, base, {
     omitKeys: new Set(["speaker", "interjection", "owner"]),
     preferredOrder: dialogSettingOrder,
   });
   if (settings.text.length > 0) {
-    lines.push(`${childIndent}- Settings: ${settings.text}`);
+    lines.push(`${childIndent}- ${settings.label}: ${settings.text}`);
   }
 
-  const base = targetRecord ? getComparisonBase(ctx, targetRecord) : undefined;
   const categories = getEffectiveCategories(lineRecord, targetRecord, base);
   renderConditionsAndEffects(lines, ctx, lineRecord.type, categories, childIndent);
   renderReferenceCategories(lines, ctx, lineRecord.type, categories, {
@@ -1810,12 +1841,12 @@ const renderDialogueRecord = (lines: string[], ctx: RenderContext, record: Inspe
   if (tag.length > 0) {
     lines.push(`- Tag: ${escapeTableCell(tag)}`);
   }
-  const settings = formatRecordValues(ctx, effective, {
+  const settings = formatDialogSettings(ctx, effective, record, base, {
     omitKeys: new Set(["owner"]),
     preferredOrder: dialogSettingOrder,
   });
   if (settings.text.length > 0) {
-    lines.push(`- Settings: ${settings.text}`);
+    lines.push(`- ${settings.label}: ${settings.text}`);
   }
   if (base) {
     lines.push(
@@ -1912,11 +1943,13 @@ const renderWordSwap = (lines: string[], ctx: RenderContext, record: InspectorRe
     lines.push("  - Removed by this mod.");
     return;
   }
-  const settings = formatRecordValues(ctx, effective, { omitKeys: new Set(["owner"]) });
-  if (settings.text.length > 0) {
-    lines.push(`  - Settings: ${settings.text}`);
-  }
   const base = getComparisonBase(ctx, record);
+  const settings = formatDialogSettings(ctx, effective, record, base, {
+    omitKeys: new Set(["owner"]),
+  });
+  if (settings.text.length > 0) {
+    lines.push(`  - ${settings.label}: ${settings.text}`);
+  }
   const categories = getEffectiveCategories(effective, record, base);
   renderConditionsAndEffects(lines, ctx, record.type, categories, "  ");
   const alternatives = categories.find((category) => category.name === "lines")?.entries ?? [];

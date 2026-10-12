@@ -221,6 +221,21 @@ export const resolveEnabledMods = async (vanillaDataPath: string): Promise<Enabl
 
 // --- アセット -----------------------------------------------------------------------
 
+/**
+ * 基準フォルダからの相対パスを解決する。mod のデータは信頼できないため、
+ * ".." や絶対パスで基準フォルダの外を指すものは null にする。
+ */
+const resolveInside = (baseDirectory: string, relativePath: string) => {
+  const resolved = path.resolve(baseDirectory, relativePath);
+  const relative = path.relative(baseDirectory, resolved);
+  return relative.length > 0 && !relative.startsWith("..") && !path.isAbsolute(relative)
+    ? resolved
+    : null;
+};
+
+const withoutNull = (paths: ReadonlyArray<string | null>) =>
+  paths.filter((item): item is string => item !== null);
+
 const resolveAsset = async (
   candidate: AssetCandidate,
   targetMods: readonly LoadedMod[],
@@ -234,10 +249,12 @@ const resolveAsset = async (
     const owner = targetMods.find(sameName) ?? referenceMods.find(sameName);
     const isTargetAsset = targetMods.some(sameName);
     const locations = [
-      ...(owner ? [path.join(path.dirname(owner.filePath), modAsset.rest)] : []),
-      ...(kenshiRoot ? [path.join(kenshiRoot, "mods", modAsset.modName, modAsset.rest)] : []),
+      ...(owner ? [resolveInside(path.dirname(owner.filePath), modAsset.rest)] : []),
+      ...(kenshiRoot
+        ? [resolveInside(path.join(kenshiRoot, "mods", modAsset.modName), modAsset.rest)]
+        : []),
     ];
-    const location = await findFirstExisting(locations);
+    const location = await findFirstExisting(withoutNull(locations));
     if (location) {
       return { resolvedPath: location, status: isTargetAsset ? "mod" : "dependency" };
     }
@@ -249,13 +266,17 @@ const resolveAsset = async (
 
   // ./data/... は mod フォルダ内の同じ構成で上書きされることがあるので、先に mod フォルダを見る
   const modLocation = await findFirstExisting(
-    targetMods.map((mod) => path.join(path.dirname(mod.filePath), candidate.path)),
+    withoutNull(targetMods.map((mod) => resolveInside(path.dirname(mod.filePath), candidate.path))),
   );
   if (modLocation) {
     return { resolvedPath: modLocation, status: "mod" };
   }
   if (kenshiRoot) {
-    const gameLocation = await findFirstExisting([path.join(kenshiRoot, candidate.path)]);
+    const gamePath = resolveInside(kenshiRoot, candidate.path);
+    if (!gamePath) {
+      return { resolvedPath: null, status: "unchecked" };
+    }
+    const gameLocation = await findFirstExisting([gamePath]);
     return gameLocation
       ? { resolvedPath: gameLocation, status: "game" }
       : { resolvedPath: null, status: "missing" };

@@ -28,7 +28,8 @@ export const mergeModFileType = 17;
 export const removedReferenceValue = 2_147_483_647;
 
 const legacySaveDataFlag = 0x8000_0000;
-const removedItemFlagKeys = new Set(["REMOVED", "DELETED"]);
+/** レコード削除を表す bool フィールド (FCS は REMOVED、OCS は DELETED を書く)。 */
+export const removedItemFlagKeys: ReadonlySet<string> = new Set(["REMOVED", "DELETED"]);
 
 export class ModParseError extends Error {
   readonly offset: number;
