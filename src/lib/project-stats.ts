@@ -1,50 +1,90 @@
 import { getItemCategory, itemCategoryLabels, type ItemCategory } from "../shared/item-types.ts";
 import type { InspectorRecord, ModProject } from "../shared/models.ts";
 
-export interface ProjectStats {
+export type RecordStatus = "Changed" | "New" | "Removed" | "Renamed" | "Unknown";
+
+export const recordStatusLabels: Record<RecordStatus, string> = {
+  Changed: "変更",
+  New: "新規",
+  Removed: "削除",
+  Renamed: "改名",
+  Unknown: "不明",
+};
+
+export const recordStatusOrder: readonly RecordStatus[] = [
+  "New",
+  "Changed",
+  "Renamed",
+  "Removed",
+  "Unknown",
+];
+
+/** REMOVED フラグを最優先し、保存上の変更種別を表示用の状態にまとめる。 */
+export const getRecordStatus = (
+  record: Pick<InspectorRecord, "removed" | "saveData">,
+): RecordStatus => {
+  if (record.removed) {
+    return "Removed";
+  }
+  switch (record.saveData.changeTypeName) {
+    case "New":
+    case "Changed":
+    case "Renamed":
+      return record.saveData.changeTypeName;
+    default:
+      return "Unknown";
+  }
+};
+
+export interface ProjectSummary {
+  assetMissingCount: number;
   dialogLineCount: number;
-  dialogRecordCount: number;
-  entityRecordCount: number;
+  entityTextCount: number;
   recordCount: number;
-  stringFieldCount: number;
-  textRecordCount: number;
+  statusCounts: Record<RecordStatus, number>;
+  warningCount: number;
 }
+
+export const summarizeProject = (project: ModProject): ProjectSummary => {
+  const statusCounts: Record<RecordStatus, number> = {
+    Changed: 0,
+    New: 0,
+    Removed: 0,
+    Renamed: 0,
+    Unknown: 0,
+  };
+  for (const record of project.inspectorRecords) {
+    statusCounts[getRecordStatus(record)] += 1;
+  }
+
+  let dialogLineCount = 0;
+  let entityTextCount = 0;
+  for (const record of project.textRecords) {
+    if (record.kind === "dialog") {
+      dialogLineCount += 1;
+    } else {
+      entityTextCount += 1;
+    }
+  }
+
+  return {
+    assetMissingCount: project.assetReferences.filter((asset) => asset.status === "missing").length,
+    dialogLineCount,
+    entityTextCount,
+    recordCount: project.inspectorRecords.length,
+    statusCounts,
+    warningCount:
+      project.failedMods.length +
+      project.missingReferencePaths.length +
+      project.mods.reduce((sum, mod) => sum + mod.warnings.length, 0),
+  };
+};
 
 export interface CategoryBreakdown {
   category: ItemCategory;
   count: number;
   label: string;
 }
-
-export const countProjectStats = (project: ModProject): ProjectStats => {
-  let dialogLineCount = 0;
-  let dialogRecordCount = 0;
-  let entityRecordCount = 0;
-
-  for (const record of project.textRecords) {
-    if (record.kind === "dialog") {
-      dialogRecordCount += 1;
-      dialogLineCount += record.texts.length;
-      continue;
-    }
-
-    entityRecordCount += 1;
-  }
-
-  const stringFieldCount = project.inspectorRecords.reduce(
-    (sum, record) => sum + record.counts.strings,
-    0,
-  );
-
-  return {
-    dialogLineCount,
-    dialogRecordCount,
-    entityRecordCount,
-    recordCount: project.inspectorRecords.length,
-    stringFieldCount,
-    textRecordCount: project.textRecords.length,
-  };
-};
 
 export const buildCategoryBreakdown = (
   inspectorRecords: readonly InspectorRecord[],
