@@ -722,3 +722,19 @@ export const getItemCategory = (code: number): ItemCategory => {
   const definition = itemTypeByCode.get(code);
   return definition ? definition.category : "other";
 };
+
+/** OCS の型名 (PascalCase) を FCS / fcs.def の型名 (UPPER_SNAKE) に変換する。例: AiPackage → AI_PACKAGE */
+export const toFcsTypeName = (englishName: string) =>
+  englishName.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toUpperCase();
+
+const itemTypeByFcsName = new Map<string, ItemTypeDefinition>();
+for (const definition of itemTypeDefinitions) {
+  itemTypeByFcsName.set(toFcsTypeName(definition.englishName), definition);
+}
+
+export const getItemTypeFcsName = (code: number) => {
+  const definition = itemTypeByCode.get(code);
+  return definition ? toFcsTypeName(definition.englishName) : `UNKNOWN_${code}`;
+};
+
+export const getItemTypeByFcsName = (fcsName: string) => itemTypeByFcsName.get(fcsName);

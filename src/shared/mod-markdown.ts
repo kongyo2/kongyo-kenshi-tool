@@ -1,1231 +1,574 @@
+import { builtinFcsSource, getBuiltinFcsSchema } from "./fcs-builtin.ts";
+import {
+  getFcsEnumLabels,
+  getFcsField,
+  type FcsFieldDefinition,
+  type FcsSchema,
+} from "./fcs-definitions.ts";
+import {
+  builtinEnumLabels,
+  describeConditionSubject,
+  dialogActionLabels,
+  dialogConditionLabels,
+  dialogEffectValueMeanings,
+  eventTriggerDescriptions,
+  eventTriggerDisplayNames,
+  eventTriggerLabels,
+  getDialogConditionKind,
+  getDialogConditionTagEnumName,
+  getFallbackFieldEnumName,
+  isAtLeastCondition,
+  repetitionLimitDurations,
+  talkerLabels,
+} from "./fcs-enums.ts";
 import {
   getItemCategory,
   getItemTypeEnglishName,
+  getItemTypeFcsName,
   getItemTypeLabel,
   itemCategoryLabels,
   type ItemCategory,
 } from "./item-types.ts";
+import { isRemovedReference } from "./mod-format.ts";
+import {
+  buildRecordIndexes,
+  findRecordValue,
+  listRecordValues,
+  type RecordValueEntry,
+  type RecordValueKind,
+} from "./mod-merge.ts";
 import type {
+  AssetReference,
   DialogRecord,
   EntityRecord,
   InspectorRecord,
   LoadedMod,
   ModProject,
   Reference,
-  ReferenceCategory,
 } from "./models.ts";
 
-const formatNumber = (value: number) => value.toLocaleString("en-US");
+export interface MarkdownRenderOptions {
+  /** 対象 mod が変更したレコードについて、参照コンテキスト上の元の値を併記する。 */
+  includeBaseComparison?: boolean;
+  /** 出力に現れたフィールドの FCS 定義 (説明・既定値) を巻末にまとめる。 */
+  includeFieldGlossary?: boolean;
+  /** FCS 定義。省略時はアプリに組み込んだ定義を使う。null なら内蔵の列挙表だけで推定する。 */
+  schema?: FcsSchema | null;
+  /** 定義の出典 (出力に記載する表示用の文字列)。 */
+  schemaSource?: string | null;
+}
+
 const dialogueTypeCode = 18;
 const dialogueLineTypeCode = 19;
 const dialogActionTypeCode = 31;
 const dialoguePackageTypeCode = 73;
-const maxDialogLineRenderDepth = 24;
+const wordSwapsTypeCode = 84;
+const dialogRecordTypes = new Set([
+  dialogueTypeCode,
+  dialogueLineTypeCode,
+  dialogActionTypeCode,
+  dialoguePackageTypeCode,
+  wordSwapsTypeCode,
+]);
+const maxDialogLineRenderDepth = 40;
+
+/** ゲーム本体が置き換えるワードスワップ (WORD_SWAPS レコードではない)。 */
+const engineWordSwapTokens: Readonly<Record<string, string>> = {
+  COST: "the value of DA_GIVE_MONEY / DA_TAKE_MONEY / DC_PLAYERMONEY on the same line (0 if none)",
+  MYNAME: "speaker name",
+  PLAYERFACTION: "player faction name",
+  TARGETFACTION: "target faction name",
+  YOURNAME: "target name (does not work on target lines)",
+};
+
+const wordSwapTokenPattern = /\/([A-Z_][A-Z0-9_]*)\//g;
+
+// --- 基本的な整形 -----------------------------------------------------------------
+
+const formatNumber = (value: number) => value.toLocaleString("en-US");
 
 const formatFloatValue = (value: number) => {
   const rounded = Number(value.toFixed(6));
   return Number.isInteger(rounded) ? rounded.toFixed(1) : String(rounded);
 };
 
-const dialogActionLabels: Record<number, string> = {
-  0: "DialogActionEnum.DA_NONE",
-  1: "DialogActionEnum.DA_TRADE",
-  2: "DialogActionEnum.DA_TALK_TO_LEADER",
-  3: "DialogActionEnum.DA_JOIN_SQUAD_WITH_EDIT",
-  4: "DialogActionEnum.DA_AFFECT_RELATIONS",
-  5: "DialogActionEnum.DA_AFFECT_REPUTATION",
-  6: "DialogActionEnum.DA_ATTACK_CHASE_FOREVER",
-  7: "DialogActionEnum.DA_GO_HOME",
-  8: "DialogActionEnum.DA_TAKE_MONEY",
-  9: "DialogActionEnum.DA_GIVE_MONEY",
-  10: "DialogActionEnum.DA_PAY_BOUNTY",
-  11: "DialogActionEnum.DA_CHARACTER_EDITOR",
-  12: "DialogActionEnum.DA_FORCE_SPEECH_TIMER",
-  13: "DialogActionEnum.DA_DECLARE_WAR",
-  14: "DialogActionEnum.DA_END_WAR",
-  15: "DialogActionEnum.DA_CLEAR_AI",
-  16: "DialogActionEnum.DA_FOLLOW_WHILE_TALKING",
-  17: "DialogActionEnum.DA_THUG_HUNTER",
-  18: "DialogActionEnum.DA_JOIN_SQUAD_FAST",
-  19: "DialogActionEnum.DA_REMEMBER_CHARACTER",
-  20: "DialogActionEnum.DA_FLAG_TEMP_ALLY",
-  21: "DialogActionEnum.DA_FLAG_TEMP_ENEMY",
-  22: "DialogActionEnum.DA_MATES_KILL_ME",
-  23: "DialogActionEnum.DA_MAKE_TARGET_RUN_FASTER",
-  24: "DialogActionEnum.DA_GIVE_TARGET_MY_SLAVES",
-  25: "DialogActionEnum.DA_TAG_ESCAPED_SLAVE",
-  26: "DialogActionEnum.DA_FREE_TARGET_SLAVE",
-  27: "DialogActionEnum.DA_MERGE_WITH_SIMILAR_SQUADS",
-  28: "DialogActionEnum.DA_SEPARATE_TO_MY_OWN_SQUAD",
-  29: "DialogActionEnum.DA_ARREST_TARGET",
-  30: "DialogActionEnum.DA_ARREST_TARGETS_CARRIED_PERSON",
-  31: "DialogActionEnum.DA_ATTACK_TOWN",
-  32: "DialogActionEnum.DA_ASSIGN_BOUNTY",
-  33: "DialogActionEnum.DA_CRIME_ALARM",
-  34: "DialogActionEnum.DA_RUN_AWAY",
-  35: "DialogActionEnum.DA_INCREASE_FACTION_RANK",
-  36: "DialogActionEnum.DA_LOCK_THIS_DIALOG",
-  37: "DialogActionEnum.DA_ASSAULT_PHASE",
-  38: "DialogActionEnum.DA_RETREAT_PHASE",
-  39: "DialogActionEnum.DA_VICTORY_PHASE",
-  40: "DialogActionEnum.DA_ENSLAVE_TARGETS_CARRIED_PERSON",
-  41: "DialogActionEnum.CHOOSE_SLAVES_SELLING",
-  42: "DialogActionEnum.CHOOSE_SLAVES_BUYING",
-  43: "DialogActionEnum.CHOOSE_PRISONER_BAIL",
-  44: "DialogActionEnum.CHOOSE_CONSCRIPTION",
-  45: "DialogActionEnum.CHOOSE_RECRUITING",
-  46: "DialogActionEnum.CHOOSE_HIRING_CONTRACT",
-  47: "DialogActionEnum.SURRENDER_NON_HUMANS",
-  48: "DialogActionEnum.CHOOSE_ANIMALS_BUYING",
-  49: "DialogActionEnum.DA_CLEAR_BOUNTY",
-  50: "DialogActionEnum.DA_PLAYER_SELL_PRISONERS",
-  51: "DialogActionEnum.DA_PLAYER_SURRENDER_MEMBER_DIFFERENT_RACE",
-  52: "DialogActionEnum.DA_SUMMON_MY_SQUAD",
-  53: "DialogActionEnum.DA_REMOVE_SLAVE_STATUS",
-  54: "DialogActionEnum.DA_OPEN_NEAREST_GATE",
-  55: "DialogActionEnum.DA_ATTACK_STAY_NEAR_HOME",
-  56: "DialogActionEnum.DA_MASSIVE_ALARM",
-  57: "DialogActionEnum.DA_ATTACK_IF_NO_COEXIST",
-  58: "DialogActionEnum.DA_KNOCKOUT",
-  59: "DialogActionEnum.DA_END",
-};
+const pluralSuffix = (label: string, count: number) =>
+  `${formatNumber(count)} ${label}${count === 1 ? "" : "s"}`;
 
-const dialogConditionLabels: Record<number, string> = {
-  0: "DialogConditionEnum.DC_NONE",
-  1: "DialogConditionEnum.DC_RELATIONS",
-  2: "DialogConditionEnum.DC_PLAYERMONEY",
-  3: "DialogConditionEnum.DC_REPUTATION",
-  4: "DialogConditionEnum.DC_CARRYING_BOUNTY_ALIVE",
-  5: "DialogConditionEnum.DC_CARRYING_BOUNTY_DEAD",
-  6: "DialogConditionEnum.DC_FACTION_VARIABLE",
-  7: "DialogConditionEnum.DC_IMPRISONED_BY_TARGET",
-  8: "DialogConditionEnum.DC_IMPRISONED_BY_OTHER",
-  9: "DialogConditionEnum.DC_IS_A_TRADER",
-  10: "DialogConditionEnum.DC_FACTION_RANK",
-  11: "DialogConditionEnum.DC_BUILDING_IS_CLOSED_AND_SECURED",
-  12: "DialogConditionEnum.DC_PLAYER_TECH_LEVEL",
-  13: "DialogConditionEnum.DC_NUM_DIALOG_EVENT_REPEATS",
-  14: "DialogConditionEnum.DC_IS_IMPRISONED",
-  15: "DialogConditionEnum.DC_IMPRISONMENT_IS_DEATHROW",
-  16: "DialogConditionEnum.DC_TARGET_IN_TALKING_RANGE",
-  17: "DialogConditionEnum.DC_IN_MY_BUILDING",
-  18: "DialogConditionEnum.DC_TARGET_LAST_SEEN_X_HOURS_AGO",
-  19: "DialogConditionEnum.DC_IS_LEADER",
-  20: "DialogConditionEnum.DC_MET_TARGET_BEFORE",
-  21: "DialogConditionEnum.DC_WEAKER_THAN_ME",
-  22: "DialogConditionEnum.DC_STRONGER_THAN_ME",
-  23: "DialogConditionEnum.DC_HAS_TAG",
-  24: "DialogConditionEnum.DC_IS_ALLY",
-  25: "DialogConditionEnum.DC_IS_ENEMY",
-  26: "DialogConditionEnum.DC_PERSONALITY_TAG",
-  27: "DialogConditionEnum.DC_BROKEN_LEG",
-  28: "DialogConditionEnum.DC_BROKEN_ARM",
-  29: "DialogConditionEnum.DC_DAMAGED_HEAD",
-  30: "DialogConditionEnum.DC_NEARLY_KO",
-  31: "DialogConditionEnum.DC_IN_A_NON_PLAYER_TOWN",
-  32: "DialogConditionEnum.DC_IS_RUNNING",
-  33: "DialogConditionEnum.DC_COPS_AROUND",
-  34: "DialogConditionEnum.NULL_NULL_____DC_TARGET_SQUAD_SIZE",
-  35: "DialogConditionEnum.DC_SQUAD_SIZE",
-  36: "DialogConditionEnum.DC_IS_PLAYER",
-  37: "DialogConditionEnum.DC_NUM_BACKPACKS",
-  38: "DialogConditionEnum.DC_SQUAD_ONLY_ANIMALS",
-  39: "DialogConditionEnum.DC_IS_OUTNUMBERED",
-  40: "DialogConditionEnum.DC_BOUNTY_AMOUNT_PERCEIVED",
-  41: "DialogConditionEnum.DC_IS_KO",
-  42: "DialogConditionEnum.DC_IS_NEARLY_KO",
-  43: "DialogConditionEnum.DC_SQUAD_IS_DOWN",
-  44: "DialogConditionEnum.DC_IS_DEAD",
-  45: "DialogConditionEnum.DC_IS_FEMALE",
-  46: "DialogConditionEnum.DC_CARRYING_SOMEONE_TO_ENSLAVE",
-  47: "DialogConditionEnum.DC_BOUNTY_AMOUNT_ACTUAL",
-  48: "DialogConditionEnum.DC_IM_UNARMED",
-  49: "DialogConditionEnum.DC_TOWN_HAS_FORTIFICATIONS_WALLS",
-  50: "DialogConditionEnum.DC_TARGET_IS_MY_MISSION_TARGET",
-  51: "DialogConditionEnum.DC_MY_MISSION_IS_FRIENDLY",
-  52: "DialogConditionEnum.DC_I_LOVE_THIS_GUY",
-  53: "DialogConditionEnum.DC_I_HATE_THIS_GUY",
-  54: "DialogConditionEnum.DC_I_SHOULD_SCREW_THIS_GUY_OVER",
-  55: "DialogConditionEnum.DC_I_SHOULD_HELP_THIS_GUY",
-  56: "DialogConditionEnum.DC_IN_COMBAT",
-  57: "DialogConditionEnum.DC_WITHIN_TOWN_WALLS",
-  58: "DialogConditionEnum.DC_TOWN_WALLS_LOCKED_UP",
-  59: "DialogConditionEnum.DC_IS_SLAVE",
-  60: "DialogConditionEnum.DC_HAS_A_BASE_NEARBY",
-  61: "DialogConditionEnum.DC_TARGET_IS_SLAVE_OF_MY_FACTION",
-  62: "DialogConditionEnum.DC_IS_ESCAPED_SLAVE",
-  63: "DialogConditionEnum.DC_IS_IN_LOCKED_CAGE",
-  64: "DialogConditionEnum.DC_WEARING_LOCKED_SHACKLES",
-  65: "DialogConditionEnum.DC_IS_SAME_RACE_AS_ME",
-  66: "DialogConditionEnum.DC_CAN_AFFORD_BOUNTY",
-  67: "DialogConditionEnum.DC_IS_SNEAKING",
-  68: "DialogConditionEnum.DC_IS_INDOORS",
-  69: "DialogConditionEnum.DC_HAS_ILLEGAL_ITEM",
-  70: "DialogConditionEnum.DC_USING_MY_TRAINING_EQUIPMENT",
-  71: "DialogConditionEnum.DC_STARVING",
-  72: "DialogConditionEnum.DC_MIXED_GENDER_GROUP",
-  73: "DialogConditionEnum.DC_TOWN_LEVEL_CURRENT_LOCATION",
-  74: "DialogConditionEnum.DC_PLAYERS_BEST_TOWN_LEVEL",
-  75: "DialogConditionEnum.DC_IN_A_PLAYER_TOWN",
-  76: "DialogConditionEnum.DC_TARGET_CHARACTER_EXISTS",
-  77: "DialogConditionEnum.DC_IS_RECRUITABLE",
-  78: "DialogConditionEnum.DC_HAS_AI_CONTRACT",
-  79: "DialogConditionEnum.DC_HAS_ROBOT_LIMBS",
-  80: "DialogConditionEnum.DC_END",
-};
+const uniquePreserveOrder = (items: readonly string[]) => [...new Set(items)];
 
-const talkerLabels: Record<number, string> = {
-  0: "TalkerEnum.T_ME",
-  1: "TalkerEnum.T_TARGET",
-  2: "TalkerEnum.T_TARGET_IF_PLAYER",
-  3: "TalkerEnum.T_INTERJECTOR1",
-  4: "TalkerEnum.T_INTERJECTOR2",
-  5: "TalkerEnum.T_INTERJECTOR3",
-  6: "TalkerEnum.T_WHOLE_SQUAD",
-  7: "TalkerEnum.T_TARGET_WITH_RACE",
-};
+const escapeTableCell = (value: string) =>
+  value.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
 
-const eventTriggerLabels: Record<number, string> = {
-  0: "EventTriggerEnum.EV_NONE",
-  1: "EventTriggerEnum.EV_PLAYER_TALK_TO_ME",
-  2: "EventTriggerEnum.EV_ANNOUNCEMENT",
-  3: "EventTriggerEnum.EV_I_SEE_NEUTRAL_SQUAD",
-  4: "EventTriggerEnum.EV_I_SEE_RAGDOLL",
-  5: "EventTriggerEnum.EV_______",
-  6: "EventTriggerEnum.EV_SOUND_THE_ALARM",
-  7: "EventTriggerEnum.EV_I_________",
-  8: "EventTriggerEnum.EV_THIEF_CAUGHT_STEALING_FROM_ME",
-  9: "EventTriggerEnum.EV_SHOO_FROM_MY_BUILDING",
-  10: "EventTriggerEnum.EV_MARKED_FOR_DEATH",
-  11: "EventTriggerEnum.EV_SCREAMING_TORTURE",
-  12: "EventTriggerEnum.EV_BAR_TALK",
-  13: "EventTriggerEnum.EV_UNLOCK_MY_CAGE_OR_SHACKLES",
-  14: "EventTriggerEnum.EV_UNLOCK_MY_CAGE_ATTEMPT",
-  15: "EventTriggerEnum.EV_I_DEFEATED_SQUAD",
-  16: "EventTriggerEnum.EV_LAUNCH_ATTACK",
-  17: "EventTriggerEnum.EV_INTRUDER_FOUND",
-  18: "EventTriggerEnum.EV_HEALING_OTHER_START",
-  19: "EventTriggerEnum.EV_BEING_HEALED_START",
-  20: "EventTriggerEnum.EV_HEALING_OTHER_FINISHED",
-  21: "EventTriggerEnum.EV_BEING_HEALED_FINISHED",
-  22: "EventTriggerEnum.EV_FIRSTAID_KIT_EMPTY",
-  23: "EventTriggerEnum.EV_GET_UP_PEACE",
-  24: "EventTriggerEnum.EV_GET_UP_FIGHT",
-  25: "EventTriggerEnum.EV_GET_UP_UNNECCESSARY_FIGHT",
-  26: "EventTriggerEnum.EV_HARRASSMENT_SHOUTS",
-  27: "EventTriggerEnum.EV_I_SEE_ANIMAL_SQUAD",
-  28: "EventTriggerEnum.EV_SPEECH_INTERRUPTED_ATTACKED_BY_TARGET",
-  29: "EventTriggerEnum.EV_SPEECH_INTERRUPTED_ATTACKED_BY_STRANGERS",
-  30: "EventTriggerEnum.EV_CONTRACT_JOB_ENDED",
-  31: "EventTriggerEnum.EV_BETRAYAL",
-  32: "EventTriggerEnum.EV_LOOTING_WEAPON_ONLY",
-  33: "EventTriggerEnum.EV_LOOTING_EVERYTHING",
-  34: "EventTriggerEnum.EV_I_SEE_UNIFORM_IMPOSTER",
-  35: "EventTriggerEnum.EV_INTRODUCING_NEW_SLAVE",
-  36: "EventTriggerEnum.EV_ESCAPING_SLAVE_SPOTTED",
-  37: "EventTriggerEnum.EV_RECAPTURED_A_SLAVE",
-  38: "EventTriggerEnum.EV_SHOUT_AT_SLAVE_WORKER",
-  39: "EventTriggerEnum.EV_SLAVE_DELIVERY",
-  40: "EventTriggerEnum.EV_ESCAPED_EX_SLAVE_SPOTTED",
-  41: "EventTriggerEnum.EV_WITNESS_GENERIC_ASSAULT",
-  42: "EventTriggerEnum.EV_WITNESS_LOOTING_ALLY",
-  43: "EventTriggerEnum.EV_WITNESS_THIEF_OR_LOCKPICK",
-  44: "EventTriggerEnum.EV_BOUNTY_SPOTTED",
-  45: "EventTriggerEnum.EV_ESCAPED_PRISONER_SPOTTED",
-  46: "EventTriggerEnum.EV_PRISONER_FREE_TO_GO",
-  47: "EventTriggerEnum.EV_ALMOST_WOKE_UP",
-  48: "EventTriggerEnum.EV_ENTER_BIOME",
-  49: "EventTriggerEnum.EV_ENTER_TOWN",
-  50: "EventTriggerEnum.EV_SQUAD_BROKEN",
-  51: "EventTriggerEnum.EV_BOUGHT_ME_FROM_SLAVERY",
-  52: "EventTriggerEnum.EV_EATING_SOMETHING_SOUNDS",
-  53: "EventTriggerEnum.EV_WORSHIPING_SOMETHING",
-  54: "EventTriggerEnum.EV_SLAVE_ESCAPE_OPPORTUNITY_SAVIOR",
-  55: "EventTriggerEnum.EV_SLAVE_ESCAPE_OPPORTUNITY_ALONE",
-  56: "EventTriggerEnum.EV_ASSASSINATION_FAILED",
-  57: "EventTriggerEnum.EV_EATING_MY_CROPS",
-  58: "EventTriggerEnum.EV_KIDNAPPING_MY_ALLY",
-  59: "EventTriggerEnum.EV_USING_MY_TRAINING_EQUIPMENT",
-  60: "EventTriggerEnum.EV_GIVE_UP_CHASE",
-  61: "EventTriggerEnum.EV_ACID_FEET",
-  62: "EventTriggerEnum.EV_ACID_RAIN",
-  63: "EventTriggerEnum.EV_ACID_WATER",
-  64: "EventTriggerEnum.EV_WINDY",
-  65: "EventTriggerEnum.EV_POISON_GAS",
-  66: "EventTriggerEnum.EV_I_SEE_ENEMY_PLAYER",
-  67: "EventTriggerEnum.EV_I_SEE_ALLY_PLAYER",
-  68: "EventTriggerEnum.EV_I_SEE_ILLEGAL_PLAYER_BUILDING",
-  69: "EventTriggerEnum.EV_BURNING",
-  70: "EventTriggerEnum.EV_LOST_LEG",
-  71: "EventTriggerEnum.EV_LOST_ARM",
-  72: "EventTriggerEnum.EV_I_SEE_PLAYER_NICE_BUILDING",
-  73: "EventTriggerEnum.EV_TAKEN_OVER_PLAYER_TOWN",
-  74: "EventTriggerEnum.EV_CROWD_TRIGGERED",
-  75: "EventTriggerEnum.EV_MAX",
-};
+/** 表以外の箇条書き・見出し用。改行だけを空白にする。 */
+const escapeInline = (value: string) => value.replace(/\r?\n/g, " ");
 
-// Extracted by reflecting forgotten construction set.exe:
-// DialogTranslation.getReadableNameForEvent(Int32).
-const eventTriggerDisplayNames: Record<number, string> = {
-  0: "None",
-  1: "Player Talk To Me",
-  2: "Announcement",
-  3: "I See Neutral Squad",
-  4: "I See Ragdoll",
-  5: "(blank placeholder)",
-  6: "Sound The Alarm",
-  7: "I (blank placeholder)",
-  8: "Thief Caught Stealing From Me",
-  9: "Shoo From My Building",
-  10: "Marked For Death",
-  11: "Screaming Torture",
-  12: "Bar Talk",
-  13: "Unlock My Cage Or Shackles",
-  14: "Unlock My Cage Attempt",
-  15: "I Defeated Squad",
-  16: "Launch Attack",
-  17: "Intruder Found",
-  18: "Healing Other Start",
-  19: "Being Healed Start",
-  20: "Healing Other Finished",
-  21: "Being Healed Finished",
-  22: "Firstaid Kit Empty",
-  23: "Get Up Peace",
-  24: "Get Up Fight",
-  25: "Get Up Unneccessary Fight",
-  26: "Harrassment Shouts",
-  27: "I See Animal Squad",
-  28: "Speech Interrupted Attacked By Target",
-  29: "Speech Interrupted Attacked By Strangers",
-  30: "Contract Job Ended",
-  31: "Betrayal",
-  32: "Looting Weapon Only",
-  33: "Looting Everything",
-  34: "I See Uniform Imposter",
-  35: "Introducing New Slave",
-  36: "Escaping Slave Spotted",
-  37: "Recaptured A Slave",
-  38: "Shout At Slave Worker",
-  39: "Slave Delivery",
-  40: "Escaped Ex Slave Spotted",
-  41: "Witness Generic Assault",
-  42: "Witness Looting Ally",
-  43: "Witness Thief Or Lockpick",
-  44: "Bounty Spotted",
-  45: "Escaped Prisoner Spotted",
-  46: "Prisoner Free To Go",
-  47: "Almost Woke Up",
-  48: "Enter Biome",
-  49: "Enter Town",
-  50: "Squad Broken",
-  51: "Bought Me From Slavery",
-  52: "Eating Something Sounds",
-  53: "Worshiping Something",
-  54: "Slave Escape Opportunity Savior",
-  55: "Slave Escape Opportunity Alone",
-  56: "Assassination Failed",
-  57: "Eating My Crops",
-  58: "Kidnapping My Ally",
-  59: "Using My Training Equipment",
-  60: "Give Up Chase",
-  61: "Acid Feet",
-  62: "Acid Rain",
-  63: "Acid Water",
-  64: "Windy",
-  65: "Poison Gas",
-  66: "I See Enemy Player",
-  67: "I See Ally Player",
-  68: "I See Illegal Player Building",
-  69: "Burning",
-  70: "Lost Leg",
-  71: "Lost Arm",
-  72: "I See Player Nice Building",
-  73: "Taken Over Player Town",
-  74: "Crowd Triggered",
-  75: "Max",
-};
+/** インラインコード。パスの \ はそのまま残し、バッククォートだけを置き換える。 */
+const formatCode = (value: string) => `\`${escapeInline(value).replace(/`/g, "'")}\``;
 
-// Paraphrased from the FCS enum comments. Numeric keys follow the real FCS executable enum values.
-const eventTriggerDescriptions: Record<number, string> = {
-  0: "no event trigger",
-  1: "player starts an NPC conversation; target is the player character",
-  2: "announcement event; marked unused in FCS comments",
-  3: "speaker sees a neutral NPC squad; repeats often",
-  4: "speaker sees a knocked-out or ragdoll target; repeats often",
-  5: "blank placeholder retained by the FCS executable",
-  6: "alarm event; marked unused in FCS comments",
-  7: "blank placeholder retained by the FCS executable",
-  8: "speaker personally catches a thief stealing",
-  9: "speaker tells target to leave their building",
-  10: "speaker is marked for death; no dialogue target",
-  11: "speaker is being tortured; no dialogue target",
-  12: "bar talk event; marked unused in FCS comments",
-  13: "non-captor unlocks speaker cage or shackles; target is rescuer",
-  14: "failed lockpick attempt on speaker cage; target is helper",
-  15: "speaker defeated the target squad",
-  16: "launch attack event; marked unused in FCS comments",
-  17: "speaker finds target inside a locked or private building",
-  18: "speaker starts healing the target",
-  19: "target starts healing the speaker",
-  20: "speaker finishes healing the target",
-  21: "target finishes healing the speaker",
-  22: "speaker runs out of medkits while healing",
-  23: "speaker gets up after a KO when fighting is over; no target",
-  24: "speaker gets up after a KO while fighting continues; target is opponent",
-  25: "speaker is pushed back into a lost fight after playing dead",
-  26: "thug hunter harassment shout while following the target",
-  27: "speaker sees an animal squad; repeats often",
-  28: "speech is interrupted because the target attacks",
-  29: "speech is interrupted by an outside attacker; target is attacker",
-  30: "AI contract or job ends; target is employer",
-  31: "an ally unexpectedly attacks the speaker",
-  32: "speaker loots only the target weapon",
-  33: "speaker loots everything from the victim",
-  34: "speaker sees a uniform impostor in looted faction gear",
-  35: "slaver introduces a newly captured slave",
-  36: "escaping slave is spotted",
-  37: "escaped slave is recaptured",
-  38: "slaver shouts at a slave worker",
-  39: "fresh slaves are delivered to a slaver colleague",
-  40: "escaped ex-slave or fugitive is spotted",
-  41: "generic assault is witnessed; target is criminal",
-  42: "looting of an ally is witnessed; target is criminal",
-  43: "theft, lockpicking, or slave freeing is witnessed",
-  44: "wanted bounty target is spotted",
-  45: "escaped prisoner is spotted outside their cage",
-  46: "prisoner sentence has ended; target is prisoner",
-  47: "sleeping speaker almost wakes up; no target",
-  48: "enter biome event; marked unused in FCS comments",
-  49: "enter town event; marked unused in FCS comments",
-  50: "squad broken event; marked unused in FCS comments",
-  51: "speaker is bought from slavery; target is new owner",
-  52: "speaker makes loud eating sounds; no target",
-  53: "speaker worships an object or deity; no target",
-  54: "slave sees masters KO and a rescuer exists",
-  55: "slave sees masters KO while alone",
-  56: "assassination or knockout attempt fails",
-  57: "pests eat crops; target is hungry pest",
-  58: "kidnapping of an ally is witnessed; target is kidnapper",
-  59: "speaker sees target using training equipment",
-  60: "speaker gives up a chase",
-  61: "acidic ground burns speaker feet; no target",
-  62: "acid rain affects the speaker; no target",
-  63: "acid water affects the swimming speaker; no target",
-  64: "wind or dust visibility event",
-  65: "poison gas affects the speaker; no target",
-  66: "speaker sees an enemy player squad; repeats often",
-  67: "speaker sees an allied player squad; repeats often",
-  68: "illegal player building is seen; marked unused in FCS comments",
-  69: "speaker is burning; no target",
-  70: "speaker loses a leg; no target",
-  71: "speaker loses an arm; no target",
-  72: "nice player building is seen; marked unused in FCS comments",
-  73: "speaker takes over a player town; no target",
-  74: "crowd event is triggered; marked unused in FCS comments",
-  75: "sentinel value, not a playable trigger",
-};
+/** 表のセル内のインラインコード (| だけをエスケープする)。 */
+const formatCodeInTable = (value: string) => formatCode(value).replace(/\|/g, "\\|");
 
-const createSequentialEnumLabels = (enumName: string, values: readonly string[]) =>
-  Object.fromEntries(values.map((name, index) => [index, `${enumName}.${name}`])) as Record<
-    number,
-    string
-  >;
+const escapeFenced = (value: string) => value.replace(/```/g, "``​`");
 
-const createOffsetEnumLabels = (enumName: string, firstValue: number, values: readonly string[]) =>
-  Object.fromEntries(
-    values.map((name, index) => [firstValue + index, `${enumName}.${name}`]),
-  ) as Record<number, string>;
-
-const armourClassLabels = createSequentialEnumLabels("ArmourClass", [
-  "GEAR_CLOTH",
-  "GEAR_LIGHT",
-  "GEAR_MEDIUM",
-  "GEAR_HEAVY",
-  "GEAR_MAX",
-]);
-
-const armourRarityLabels = createSequentialEnumLabels("ArmourRarity", [
-  "GEAR_PROTOTYPE",
-  "GEAR_CHEAP",
-  "GEAR_STANDARD",
-  "GEAR_GOOD",
-  "GEAR_QUALITY",
-  "GEAR_MASTER",
-]);
-
-const attachSlotLabels = createSequentialEnumLabels("AttachSlot", [
-  "ATTACH_WEAPON",
-  "ATTACH_BACK",
-  "ATTACH_HAIR",
-  "ATTACH_HAT",
-  "ATTACH_EYES",
-  "ATTACH_BODY",
-  "ATTACH_LEGS",
-  "ATTACH_NONE",
-  "ATTACH_SHIRT",
-  "ATTACH_BOOTS",
-  "ATTACH_GLOVES",
-  "ATTACH_NECK",
-  "ATTACH_BACKPACK",
-  "ATTACH_BEARD",
-  "ATTACH_BELT",
-]);
-
-const blackboardSignalFunctionLabels = createSequentialEnumLabels("BlackboardSignalFunctions", [
-  "SIGNAL_NONE",
-  "SIG_RETREAT_CANNIBAL_RAID",
-  "SIG_AT_SAFE_TOWN",
-  "SIG_AT_HOME_TOWN",
-  "SIG_CANNIBAL_START_PATROL",
-  "SIG_SQUAD_NOT_INTACT",
-  "SIG_START_PATROL",
-  "SIG_DIPLOMAT_MISSION",
-  "SIG_DEFEAT_SQUAD",
-  "SIG_HOME_OWNER_KEEP_LOCKED",
-  "SIG_GATHER_UP_ALL_LOCAL_PRISONERS",
-  "SIG_SLAVER_SHIP_TO_WORKCAMPS",
-  "SIG_BODYGUARD",
-  "SIG_BECOME_EX_SLAVE",
-  "SIG_OUT_OF_DANGER",
-  "SIG_DEFEND_PLAYER_TOWN_TIMED",
-  "SIG_WANDERING_TOWN_TO_TOWN",
-  "SIG_HANG_OUT_AT_BAR",
-  "SIG_RAIDING_WEAK_VILLAGES",
-  "WAR_GATHER_FORCES",
-  "WAR_ASSAULT_TOWN",
-  "WAR_BATTLE_MEETING",
-  "SIG_REFUGEE_DISBAND",
-  "SIG_START_PATROL_RUNNING",
-  "SIG_GATHER_UP_ALL_LOCAL_PRISONERS_UNHOLY",
-  "SIG_RETREAT_CANNIBAL_RAID_TO_NEAREST_NEST",
-  "SIG_HANG_OUT_OUTDOORS_ONLY",
-  "SIG_CANNIBALS_AT_HOME",
-  "SIG_SLAVER_SHIP_TO_ANYWHERE_CLOSE",
-  "SIG_PASSING_BY_TOWN_ASSAULT",
-  "SIG_OCCUPY_CONQUERED_TOWN",
-  "SIG_DEFEND_PLAYER_TOWN_CAMPAIGN",
-  "WAR_ASSAULT_TOWN_CANNIBAL",
-  "SIG_TIMED_CONTRACT",
-]);
-
-const bodyPartTypeLabels = createSequentialEnumLabels("BodyPartType", [
-  "PART_TORSO",
-  "PART_LEG",
-  "PART_ARM",
-  "PART_HEAD",
-]);
-
-const buildingDesignationLabels = createSequentialEnumLabels("BuildingDesignation", [
-  "BD_NONE",
-  "BD_SHOP",
-  "BD_BARRACKS",
-  "BD_BAR",
-  "BD_HOSPITAL",
-  "BD_ARMOURY",
-  "BD_TREASURE",
-  "BD_PRISON",
-  "BD_HQ",
-  "BD_RESIDENTIAL",
-  "BD_SLAVE_STORAGE",
-  "BD_RESIDENTIAL_SMALL",
-]);
-
-const buildingFunctionLabels = createSequentialEnumLabels("BuildingFunction", [
-  "BF_ANY",
-  "BF_MINE",
-  "BF_RESOURCE_STORAGE",
-  "BF_RESEARCH",
-  "BF_REFINERY",
-  "BF_GENERATOR",
-  "BF_BED",
-  "BF_TRAINING",
-  "BF_CAGE",
-  "BF_SHOP",
-  "BF_CRAFTING",
-  "BF_CORPSE_DISPOSAL",
-  "BF_TURRET",
-  "BF_GENERAL_STORAGE",
-  "BF_ITEM_FURNACE",
-  "BF_LIGHT",
-  "BF_TABLE",
-  "BF_CHAIR",
-  "BF_FLUFF",
-  "BF_SHELL_WITH_INTERIOR",
-  "BF_WALL",
-  "BF_GATE",
-  "BF_DOOR",
-  "BF_BATTERY",
-  "BF_THRONE",
-  "BF_SKELETON_BED",
-  "BF_RAIN_COLLECTOR",
-  "BF_MINE_NATURAL",
-  "BF_STEERING",
-  "BF_ENGINE",
-  "BF_LIQUID_TANK",
-]);
-
-const buildingSoundLabels = createSequentialEnumLabels("BuildingSound", [
-  "None",
-  "Bed",
-  "Dummy",
-  "Farm",
-  "Generator",
-  "Grain_Silo",
-  "House",
-  "Mine_Ore",
-  "Mine_Stone",
-  "Research_Bench",
-  "Store_Armor",
-  "Store_Building_Materials",
-  "Store_Flour",
-  "Store_Ore",
-  "Store_Prisoner",
-  "Store_Rum",
-  "Store_Stones",
-  "Stove",
-  "Well",
-  "Wind_Generator",
-  "Chain_Bench",
-  "Fabric_Loom",
-  "Leather_Bench",
-  "Medical_Desk",
-  "Plate_Station",
-  "Shop_Counter",
-  "Smithy",
-  "Stone_Processor",
-  "Armorer",
-  "Bar",
-  "Boxes",
-  "Campfire",
-  "Gate",
-  "General_Goods",
-  "Hive_Hut",
-  "Lamp",
-  "Long_House",
-  "Outhouse",
-  "Tailor",
-  "Tower",
-  "Travel",
-  "Turret",
-  "Wall_Metal",
-  "Wall_Station_House",
-  "Wall_Stone",
-  "Wall_Wood",
-  "Wood_Object_Big",
-  "Wood_Object_Small",
-]);
-
-const characterAnimCategoryLabels = createSequentialEnumLabels("CharacterAnimCategory", [
-  "ANIM_NORMAL",
-  "ANIM_IMPRISONED",
-  "ANIM_SLEEPING",
-  "ANIM_CARRIED",
-  "ANIM_SWIMMING",
-  "ANIM_GROUNDED",
-  "ANIM_COMBAT",
-  "ANIM_ATTACKS",
-  "ANIM_RANGED",
-]);
-
-const characterTypeLabels = createSequentialEnumLabels("CharacterTypeEnum", [
-  "OT_NONE",
-  "OT_LAW_ENFORCEMENT",
-  "OT_MILITARY",
-  "OT_TRADER",
-  "OT_CIVILIAN",
-  "OT_DIPLOMAT",
-  "OT_SLAVE",
-  "OT_SLAVER",
-  "OT_BANDIT",
-  "OT_ADVENTURER",
-  "OT_END",
-]);
-
-const colourChannelLabels = createSequentialEnumLabels("ColourChannel", [
-  "RED",
-  "GREEN",
-  "BLUE",
-  "ALPHA",
-]);
-
-const cutDirectionLabels = createSequentialEnumLabels("CutDirection", [
-  "CUT_DEFAULT",
-  "CUT_DOWNWARD",
-  "CUT_LEFT",
-  "CUT_RIGHT",
-  "CUT_THRUST",
-  "CUT_UPWARDS",
-  "CUT_PIERCED",
-  "CUT_REAR_DOWNWARD",
-  "CUT_REAR_LEFT",
-  "CUT_REAR_RIGHT",
-]);
-
-const cutOriginationLabels = createSequentialEnumLabels("CutOrigination", [
-  "FRONT",
-  "REAR",
-  "LEFTSIDE",
-  "RIGHTSIDE",
-]);
-
-const doorMaterialLabels = createSequentialEnumLabels("DoorMaterial", [
-  "Wood",
-  "Mechanical",
-  "Gate",
-]);
-
-const doorStateLabels = createSequentialEnumLabels("DoorState", [
-  "CLOSED",
-  "OPEN",
-  "LOCKED",
-  "BROKEN",
-]);
-
-const eitherLabels = createSequentialEnumLabels("Either", ["NO", "YES", "EITHER"]);
-
-const effectTypeLabels = createSequentialEnumLabels("EffectType", [
-  "NONE",
-  "CAMERA",
-  "POINT",
-  "WANDERING",
-  "GLOBAL",
-  "CAMERA_RAIN",
-  "CAMERA_ACID_RAIN",
-  "POINT_LIGHTING",
-  "WANDERING_STORM",
-  "WANDERING_GAS",
-  "GLOBAL_POINT",
-]);
-
-const effectVolumeTypeLabels = createSequentialEnumLabels("EffectVolumeType", [
-  "SPHERE",
-  "CYLINDER",
-]);
-
-const farmLayoutLabels = createSequentialEnumLabels("FarmLayout", ["GRID", "CLUSTER", "RANDOM"]);
-
-const groundTypeLabels = createSequentialEnumLabels("GroundType", [
-  "GROUND_SAND",
-  "GROUND_GRASS",
-  "GROUND_CONCRETE",
-  "GROUND_WOOD",
-  "GROUND_METAL",
-  "GROUND_WATER",
-  "GROUND_MUD",
-  "GROUND_SNOW",
-  "GROUND_DIRT",
-]);
-
-const interiorSoundLabels = createSequentialEnumLabels("InteriorSound", [
-  "None",
-  "Metal",
-  "Stone",
-  "Wicker",
-  "Wood",
-]);
-
-const inventorySoundLabels = createSequentialEnumLabels("InventorySound", [
-  "Backpack",
-  "Building_Material",
-  "Fabric",
-  "Flour",
-  "Food",
-  "Kits",
-  "Leather",
-  "Luxury",
-  "Narcotics",
-  "Ore",
-  "Potato",
-  "Robotic_Component",
-  "Rum",
-  "Steel_Bar",
-  "Tools",
-  "Water",
-  "Wheat",
-  "Armor_Plating",
-  "Blueprints",
-  "Meat",
-]);
-
-const itemFunctionLabels = createSequentialEnumLabels("ItemFunction", [
-  "ITEM_NO_FUNCTION",
-  "ITEM_FIRSTAID",
-  "ITEM_MEDRIGGING",
-  "ITEM_FOOD",
-  "ITEM_CONTAINER",
-  "ITEM_WEAPON",
-  "ITEM_CLOTHING",
-  "ITEM____",
-  "ITEM_NARCOTIC",
-  "ITEM_TOOL",
-  "ITEM_ANYTHING",
-  "ITEM_BLUEPRINT",
-  "ITEM_ROBOTREPAIR",
-  "ITEM_BOOK",
-  "ITEM_MONEY",
-  "ITEM_FOOD_RESTRICTED",
-  "ITEM_AMMO",
-  "ITEM_SEVERED_LIMB",
-]);
-
-const itemPersistenceLabels = createSequentialEnumLabels("ItemPersistence", [
-  "PERSIST_NONE",
-  "PERSIST_INDOORS",
-  "PERSIST_INTOWN",
-  "PERSIST_ALWAYS",
-]);
-
-const lightEffectLabels = createSequentialEnumLabels("LightEffect", [
-  "NONE",
-  "PULSE",
-  "FLICKER",
-  "SHIMMER",
-]);
-
-const lightTypeLabels = createSequentialEnumLabels("LightType", ["POINT", "SPOT"]);
-
-const limbSlotLabels = createOffsetEnumLabels("LimbSlot", 50, [
-  "LEFT_ARM",
-  "RIGHT_ARM",
-  "LEFT_LEG",
-  "RIGHT_LEG",
-]);
-
-const miningResourceLabels = createSequentialEnumLabels("MiningResource", [
-  "NONE",
-  "IRON",
-  "STONE",
-  "COPPER",
-  "CARBON",
-  "WATER",
-  "GROUND",
-]);
-
-const moveSpeedLabels = createSequentialEnumLabels("MoveSpeed", [
-  "WALK",
-  "JOG",
-  "RUN",
-  "GROUPED",
-  "NO_SPEED_CHANGE",
-]);
-
-const nodeTypeLabels = createSequentialEnumLabels("NodeType", [
-  "NODE_SHOPKEEPER",
-  "NODE_GENERAL",
-  "NODE_GUARD_POST",
-  "NODE_TURRET",
-  "NODE_USE",
-  "NODE_LIGHT",
-  "NODE_NULL",
-]);
-
-const partMapColourLabels = createSequentialEnumLabels("PartMapColours", [
-  "White",
-  "Red",
-  "Green",
-  "Blue",
-  "Yellow",
-  "Magenta",
-  "Cyan",
-  "Orange",
-  "Purple",
-  "Teal",
-]);
-
-const pathModeLabels = createSequentialEnumLabels("PathMode", [
-  "NAVMESH_IGNORE",
-  "NAVMESH_PROJECTED",
-  "NAVMESH_OBSTACLE",
-  "NAVMESH_WALKABLE",
-]);
-
-const personalityTagLabels = createSequentialEnumLabels("PersonalityTags", [
-  "PT_NONE",
-  "PT_HONORABLE",
-  "PT_TRAITOROUS",
-  "PT___",
-  "PT__",
-  "PT_SMART",
-  "PT_DUMB",
-  "PT____",
-  "PT_____",
-  "PT_BRAVE",
-  "PT_FEARFUL",
-  "PT_WARM_KIND",
-  "PT_COLD_CRUEL",
-  "PT_NORMAL",
-  "PT_MANIACAL",
-  "PT_END",
-]);
-
-const raceSoundLabels = createSequentialEnumLabels("RaceSound", [
-  "HUMAN",
-  "SHEK",
-  "HIVE",
-  "SKELETON",
-  "BEAK",
-  "BULL",
-  "CAGE",
-  "DOG",
-  "DUCK",
-  "GARRU",
-  "GOAT",
-  "GORILLO",
-  "IRONSPIDER",
-  "LEVIATHAN",
-  "PACK",
-  "SPIDER",
-  "TURTLE",
-]);
-
-const robotLimbLabels = createSequentialEnumLabels("RobotLimb", [
-  "LEFT_ARM",
-  "RIGHT_ARM",
-  "LEFT_LEG",
-  "RIGHT_LEG",
-  "NULL_LIMB",
-]);
-
-const slaveStateLabels = createSequentialEnumLabels("SlaveStateEnum", [
-  "NOT_SLAVE",
-  "IS_SLAVE",
-  "ESCAPING_SLAVE",
-  "EX_SLAVE",
-]);
-
-const squadFormationLabels = createSequentialEnumLabels("SquadFormation", [
-  "RANDOM",
-  "CARAVAN",
-  "MILITARY",
-]);
-
-const statsEnumeratedLabels = createSequentialEnumLabels("StatsEnumerated", [
-  "STAT_NONE",
-  "STAT_STRENGTH",
-  "STAT_MELEE_ATTACK",
-  "STAT_LABOURING",
-  "STAT_SCIENCE",
-  "STAT_ENGINEERING",
-  "STAT_ROBOTICS",
-  "STAT_SMITHING_WEAPON",
-  "STAT_SMITHING_ARMOUR",
-  "STAT_MEDIC",
-  "STAT_THIEVING",
-  "STAT_TURRETS",
-  "STAT_FARMING",
-  "STAT_COOKING",
-  "STAT_HIVEMEDIC",
-  "STAT_VET",
-  "STAT_STEALTH",
-  "STAT_ATHLETICS",
-  "STAT_DEXTERITY",
-  "STAT_MELEE_DEFENCE",
-  "STAT_WEAPONS",
-  "STAT_TOUGHNESS",
-  "STAT_ASSASSINATION",
-  "STAT_SWIMMING",
-  "STAT_PERCEPTION",
-  "STAT_KATANAS",
-  "STAT_SABRES",
-  "STAT_HACKERS",
-  "STAT_HEAVYWEAPONS",
-  "STAT_BLUNT",
-  "STAT_MARTIALARTS",
-  "STAT_MASSCOMBAT",
-  "STAT_DODGE",
-  "STAT_SURVIVAL",
-  "STAT_POLEARMS",
-  "STAT_CROSSBOWS",
-  "STAT_FRIENDLY_FIRE",
-  "STAT_LOCKPICKING",
-  "STAT_SMITHING_BOW",
-  "STAT_END",
-  "_PrimaryWeaponDamage",
-  "_PrimaryWeaponSpeed",
-  "_SecondaryWeaponDamage",
-  "_SecondaryWeaponSpeed",
-  "_MaxCarryWeight",
-  "_StrengthXPRateWalk",
-  "_StrengthXPRateCombat",
-  "_AttackSpeedHeavyWeapons",
-  "_DamageResistance",
-  "_ToughnessXPRate",
-  "_KnockoutTime",
-  "_ToughnessKnockoutPoint",
-  "_WoundDeteriorationSpeed",
-  "_MaxRunSpeed",
-  "_CurrentRunSpeed",
-  "_AthleticsXPBonus",
-  "_TurretAccuracy",
-  "_TurretRateOfFire",
-  "_TurretFriendlyFireAvoidance",
-  "_BuildingRate",
-  "_RepairingRate",
-  "_Mining",
-  "_Farming",
-  "_UsingMachinery",
-  "_encumbrance",
-  "_combatSpeed",
-]);
-
-const taskPriorityLabels = createSequentialEnumLabels("taskPriority", [
-  "TP_JUST_ACTION",
-  "TP_FLUFF",
-  "TP_NON_URGENT",
-  "TP_URGENT",
-  "TP_OBEDIENCE",
-  "TP_MAX_SIZE",
-]);
-
-const taskTargetTypeLabels = createSequentialEnumLabels("TaskTargetType", [
-  "TARGET_SPECIFIC",
-  "TARGET_SELF",
-  "TARGET_LEADER",
-  "TARGET_SQUAD_MISSION",
-  "TARGET_HOME_GATE",
-]);
-
-const townTypeLabels = createSequentialEnumLabels("TownType", [
-  "TOWN_NEST",
-  "TOWN_OUTPOST",
-  "TOWN_TOWN",
-  "TOWN_VILLAGE",
-  "TOWN_RUINS",
-  "TOWN_SLAVE_CAMP",
-  "TOWN_MILITARY",
-  "TOWN_PRISON",
-  "TOWN_NEST_MARKER",
-  "TOWN_POI",
-  "TOWN_NULL",
-]);
-
-const unloadedPlatoonJobLabels = createSequentialEnumLabels("UnloadedPlatoonJob", [
-  "UPJOB_NONE",
-  "UPJOB_PATROL_TOWN",
-  "UPJOB_PATROL_SHORTRANGE",
-  "UPJOB_PATROL_LONGRANGE",
-  "UPJOB_GOHOME",
-  "UPJOB_TRAVEL_TARGET",
-  "UPJOB_TRAVEL_TARGET_FAST",
-]);
-
-const wallSectionLabels = createSequentialEnumLabels("WallSection", [
-  "NORMAL",
-  "CONNECTOR",
-  "LOWER_WEDGE",
-  "SINGLE",
-  "SHORT",
-]);
-
-const warCampaignLabels = createSequentialEnumLabels("WarCampaignEnum", [
-  "ASSAULT_TOWN",
-  "CONQUER_TOWN",
-  "DEFEND_TOWN",
-  "TRADER_VISIT",
-]);
-
-const weatherAffectingLabels = createSequentialEnumLabels("WeatherAffecting", [
-  "WA_NONE",
-  "WA_DUSTSTORM",
-  "WA_ACID",
-  "WA_BURNING",
-  "WA_GAS",
-  "WA_RAIN",
-]);
-
-const weaponCategoryLabels = createSequentialEnumLabels("WeaponCategory", [
-  "SKILL_KATANAS",
-  "SKILL_SABRES",
-  "SKILL_BLUNT",
-  "SKILL_HEAVY",
-  "SKILL_HACKERS",
-  "SKILL_UNARMED",
-  "SKILL_BOW",
-  "SKILL_TURRET",
-  "ATTACK_POLEARMS",
-  "ATTACK_ELEPHANT",
-  "ATTACK_DOG",
-  "ATTACK_BULL",
-  "ATTACK_ROBOTSPIDER",
-  "ATTACK_SPIDER",
-  "ATTACK_CAGEBEAST",
-  "ATTACK_DUCK",
-  "ATTACK_GORILLA",
-  "ATTACK_GAR",
-  "ATTACK_FROG",
-  "ATTACK_GOAT",
-  "ATTACK_GIRAFFE",
-  "ATTACK_NULL",
-  "NUM_SKILL_TYPES",
-]);
-
-const integerValueLabels: Record<string, Record<number, string>> = {
-  "affect type": weatherAffectingLabels,
-  "action name": dialogActionLabels,
-  animal: weaponCategoryLabels,
-  "armour cap": armourRarityLabels,
-  "armour grade": armourRarityLabels,
-  "armour max": armourRarityLabels,
-  "armour min": armourRarityLabels,
-  "attach slot": attachSlotLabels,
-  "attack type": weaponCategoryLabels,
-  "body part type": bodyPartTypeLabels,
-  "building designation": buildingDesignationLabels,
-  category: characterAnimCategoryLabels,
-  class: armourClassLabels,
-  classification: taskPriorityLabels,
-  "compare by": {
-    0: "ComparisonEnum.CE_EQUALS",
-    1: "ComparisonEnum.CE_LESS_THAN",
-    2: "ComparisonEnum.CE_MORE_THAN",
-  },
-  "condition name": dialogConditionLabels,
-  "crossbow levels": armourRarityLabels,
-  "dirt type": groundTypeLabels,
-  "door type": doorMaterialLabels,
-  "exterior material": groundTypeLabels,
-  "force speed": moveSpeedLabels,
-  function: buildingFunctionLabels,
-  "fundamental type": characterTypeLabels,
-  "grass type": groundTypeLabels,
-  "has weapon L": eitherLabels,
-  "has weapon R": eitherLabels,
-  "heal stat": statsEnumeratedLabels,
-  "hide parts": partMapColourLabels,
-  "initial door state": doorStateLabels,
-  "interior ambience": interiorSoundLabels,
-  "interior material": groundTypeLabels,
-  "inventory sound": inventorySoundLabels,
-  "is combat mode": eitherLabels,
-  "item function": itemFunctionLabels,
-  key: warCampaignLabels,
-  layout: farmLayoutLabels,
-  "link type": wallSectionLabels,
-  "node type": nodeTypeLabels,
-  "NPC class": characterTypeLabels,
-  "path mode": pathModeLabels,
-  persistent: itemPersistenceLabels,
-  "repetition limit": {
-    0: "DialogRepetitionEnum.DR_NO_LIMIT",
-    1: "DialogRepetitionEnum.DR_SHORT_2",
-    2: "DialogRepetitionEnum.DR_MEDIUM_6",
-    3: "DialogRepetitionEnum.DR_LONG_48",
-    4: "DialogRepetitionEnum.DR_LONG_1WEEK",
-    5: "DialogRepetitionEnum.DR_ONCE_ONLY",
-    6: "DialogRepetitionEnum.DR_VSHORT_020",
-  },
-  "road type": groundTypeLabels,
-  "robotics levels": armourRarityLabels,
-  "select sound": buildingSoundLabels,
-  "signal func": blackboardSignalFunctionLabels,
-  "skill category": weaponCategoryLabels,
-  "skill category animation override": weaponCategoryLabels,
-  slave: slaveStateLabels,
-  "slope type": groundTypeLabels,
-  sounds: raceSoundLabels,
-  speaker: talkerLabels,
-  "squad formation": squadFormationLabels,
-  "stat used": statsEnumeratedLabels,
-  "stealth mode": eitherLabels,
-  stigma: characterTypeLabels,
-  "stumble from": cutOriginationLabels,
-  "target is type": characterTypeLabels,
-  targeting: taskTargetTypeLabels,
-  "travel speed loaded": moveSpeedLabels,
-  "travel speed unloaded": moveSpeedLabels,
-  "unloaded func": unloadedPlatoonJobLabels,
-  "weather type": weatherAffectingLabels,
-  who: talkerLabels,
-  "world resource mining": miningResourceLabels,
-};
-
-const contextualIntegerValueLabels: Record<number, Record<string, Record<number, string>>> = {
-  2: {
-    slot: attachSlotLabels,
-  },
-  3: {
-    slot: attachSlotLabels,
-  },
-  4: {
-    slot: attachSlotLabels,
-  },
-  6: {
-    slot: attachSlotLabels,
-  },
-  13: {
-    type: townTypeLabels,
-  },
-  82: {
-    type: effectTypeLabels,
-  },
-  88: {
-    effect: lightEffectLabels,
-    type: lightTypeLabels,
-  },
-  96: {
-    type: effectVolumeTypeLabels,
-  },
-  111: {
-    slot: limbSlotLabels,
-  },
-};
-
-const integerValuePatternLabels: Array<{
-  labels: Record<number, string>;
-  pattern: RegExp;
-}> = [
-  {
-    labels: cutDirectionLabels,
-    pattern: /^attack direction \d+$/,
-  },
-  {
-    labels: colourChannelLabels,
-    pattern: /^(?:hair|head) (?:alpha |diffuse )?channel(?: female)?$/,
-  },
-  {
-    labels: robotLimbLabels,
-    pattern: /^limb \d+$/,
-  },
-  {
-    labels: statsEnumeratedLabels,
-    pattern: /^stats (?:bad|good)\d+$/,
-  },
-  {
-    labels: personalityTagLabels,
-    pattern: /^tags (?:always|common|never|rare)\d+$/,
-  },
-  {
-    labels: weatherAffectingLabels,
-    pattern: /^weather (?:immunity|protection)\d+$/,
-  },
-];
-
-const getIntegerValueLabels = (key: string, recordType?: number) => {
-  const contextualLabels =
-    recordType === undefined ? undefined : contextualIntegerValueLabels[recordType]?.[key];
-
-  if (contextualLabels) {
-    return contextualLabels;
+const formatMultiline = (value: string) => {
+  if (value.length === 0) {
+    return "(empty)";
   }
 
-  const directLabels = integerValueLabels[key];
-  if (directLabels) {
-    return directLabels;
+  return "```text\n" + escapeFenced(value) + "\n```";
+};
+
+const pushIndentedBlock = (lines: string[], indent: string, block: string) => {
+  for (const line of block.split("\n")) {
+    lines.push(`${indent}${line}`);
+  }
+};
+
+const isInlineText = (value: string) => !/[\r\n]/.test(value) && value.length <= 600;
+
+/** 1 行で収まるテキストは箇条書きの値として、複数行ならコードブロックとして出力する。 */
+const pushTextValue = (lines: string[], indent: string, label: string, value: string) => {
+  if (value.length === 0) {
+    lines.push(`${indent}- ${label}: (empty)`);
+    return;
+  }
+  if (isInlineText(value)) {
+    lines.push(`${indent}- ${label}: ${value}`);
+    return;
+  }
+  lines.push(`${indent}- ${label}:`);
+  pushIndentedBlock(lines, `${indent}  `, formatMultiline(value));
+};
+
+const normalizeModName = (value: string) => value.replace(/\.(mod|base|translation)$/i, "");
+
+const inferReferenceSource = (targetId: string) => {
+  const separatorIndex = targetId.indexOf("-");
+  if (separatorIndex < 0 || separatorIndex === targetId.length - 1) {
+    return "";
   }
 
-  return integerValuePatternLabels.find(({ pattern }) => pattern.test(key))?.labels;
+  return targetId.slice(separatorIndex + 1);
 };
+
+const formatSigned = (value: number) => (value > 0 ? `+${value}` : String(value));
+
+// --- レコードの基本情報 -----------------------------------------------------------
+
+type HeadingRecord = Pick<InspectorRecord, "name" | "stringId" | "type">;
+
+const isGenericDialogTitle = (value: string) => /^DIALOGUE_LINE\d*$/i.test(value);
+
+const renderBaseRecordHeading = (record: HeadingRecord) => {
+  const trimmedName = record.name.trim();
+
+  if (
+    record.type === dialogueLineTypeCode &&
+    (trimmedName.length === 0 || isGenericDialogTitle(trimmedName))
+  ) {
+    return record.stringId;
+  }
+
+  if (trimmedName.length > 0) {
+    return trimmedName;
+  }
+
+  if (record.stringId.length > 0) {
+    return record.stringId;
+  }
+
+  return "(unnamed)";
+};
+
+const renderInspectorHeading = (record: HeadingRecord) => renderBaseRecordHeading(record);
+
+const renderTypeDescriptor = (type: number) =>
+  `${type} · ${getItemTypeEnglishName(type)} · ${getItemTypeLabel(type)}`;
+
+/** 表示用の状態。REMOVED フラグが立っていれば保存上の変更種別より優先する。 */
+const getRecordStatus = (record: Pick<InspectorRecord, "removed" | "saveData">) =>
+  record.removed ? "Removed" : record.saveData.changeTypeName;
+
+const getReferences = (record: InspectorRecord | undefined, name: string) =>
+  record?.referenceCategories.find((category) => category.name === name)?.references ?? [];
+
+const getStringValue = (record: InspectorRecord, key: string) =>
+  record.strings.find((entry) => entry.key === key)?.value ?? "";
+
+const getIntValue = (record: InspectorRecord | undefined, key: string) =>
+  record?.values.ints.find((entry) => entry.key === key)?.value;
+
+const getFloatValue = (record: InspectorRecord | undefined, key: string) =>
+  record?.values.floats.find((entry) => entry.key === key)?.value;
+
+const getBoolValue = (record: InspectorRecord | undefined, key: string) =>
+  record?.values.bools.find((entry) => entry.key === key)?.value;
+
+const getVisibleStringEntries = (record: Pick<InspectorRecord, "strings">) =>
+  record.strings.filter((entry) => entry.value.length > 0);
+
+const getVisibleDialogTexts = (record: DialogRecord) =>
+  record.texts.filter((text) => text.original.length > 0);
+
+const hasReferenceDetails = (record: InspectorRecord) =>
+  record.referenceCategories.some((category) => category.references.length > 0);
+
+const isDialogRelevantRecord = (record: Pick<InspectorRecord, "type">) =>
+  dialogRecordTypes.has(record.type);
+
+/** ダイアログ・パッケージは名前に "Unfinished" を含むとゲーム側で無効になる。 */
+const isUnfinishedDialog = (record: InspectorRecord) =>
+  (record.type === dialogueTypeCode || record.type === dialoguePackageTypeCode) &&
+  record.name.includes("Unfinished");
+
+const getTargetMods = (project: ModProject) => project.mods.filter((mod) => mod.role === "target");
+
+const getReferenceMods = (project: ModProject) =>
+  project.mods.filter((mod) => mod.role === "reference");
+
+const collectDeclaredDependencies = (mods: readonly LoadedMod[]) =>
+  uniquePreserveOrder(mods.flatMap((mod) => mod.header.dependencies));
+
+const collectDeclaredReferences = (mods: readonly LoadedMod[]) =>
+  uniquePreserveOrder(mods.flatMap((mod) => mod.header.references));
+
+const groupByMod = <T extends { modName: string }>(records: readonly T[]) => {
+  const groups = new Map<string, T[]>();
+  for (const record of records) {
+    const modName = normalizeModName(record.modName);
+    const existing = groups.get(modName);
+    if (existing) {
+      existing.push(record);
+    } else {
+      groups.set(modName, [record]);
+    }
+  }
+  return groups;
+};
+
+// --- 描画コンテキスト -------------------------------------------------------------
+
+interface RenderContext {
+  /** 参照コンテキストのみを合成した、対象 mod 適用前のレコード */
+  baseById: ReadonlyMap<string, InspectorRecord>;
+  /** 参照コンテキスト + 対象 mod を合成した、ゲーム内での実際のレコード */
+  effectiveById: ReadonlyMap<string, InspectorRecord>;
+  includeBaseComparison: boolean;
+  project: ModProject;
+  /** 描画済みのダイアログ行 stringId → 最初に描画した場所 */
+  renderedLineLocations: Map<string, string>;
+  renderedRecordUids: Set<string>;
+  schema: FcsSchema | null;
+  sourcesById: ReadonlyMap<string, readonly string[]>;
+  /** 対象 mod のレコード (差分そのもの) */
+  targetById: ReadonlyMap<string, InspectorRecord>;
+  /** 出力に現れた FCS 型名 → フィールド名 (用語集用) */
+  usedFields: Map<string, Set<string>>;
+  wordSwapTokens: Map<string, number>;
+}
+
+const createRenderContext = (
+  project: ModProject,
+  options: MarkdownRenderOptions,
+): RenderContext => {
+  const indexes = buildRecordIndexes(project.contextRecords, project.inspectorRecords);
+  const targetById = new Map<string, InspectorRecord>();
+  for (const record of project.inspectorRecords) {
+    targetById.set(record.stringId, record);
+  }
+
+  return {
+    baseById: indexes.base,
+    effectiveById: indexes.effective,
+    targetById,
+    includeBaseComparison: options.includeBaseComparison ?? true,
+    project,
+    renderedLineLocations: new Map(),
+    renderedRecordUids: new Set(),
+    schema: options.schema === undefined ? getBuiltinFcsSchema() : options.schema,
+    sourcesById: indexes.sources,
+    usedFields: new Map(),
+    wordSwapTokens: new Map(),
+  };
+};
+
+const noteUsedField = (ctx: RenderContext, recordType: number, fieldName: string) => {
+  const fcsType = getItemTypeFcsName(recordType);
+  let fields = ctx.usedFields.get(fcsType);
+  if (!fields) {
+    fields = new Set();
+    ctx.usedFields.set(fcsType, fields);
+  }
+  fields.add(fieldName);
+};
+
+const getFieldDefinition = (ctx: RenderContext, recordType: number, fieldName: string) =>
+  getFcsField(ctx.schema, getItemTypeFcsName(recordType), fieldName);
+
+const noteWordSwapTokens = (ctx: RenderContext, text: string) => {
+  for (const match of text.matchAll(wordSwapTokenPattern)) {
+    const token = match[1]!;
+    ctx.wordSwapTokens.set(token, (ctx.wordSwapTokens.get(token) ?? 0) + 1);
+  }
+};
+
+// --- 値の表示 ---------------------------------------------------------------------
+
+const getEnumNameForField = (ctx: RenderContext, recordType: number, key: string) => {
+  const field = getFieldDefinition(ctx, recordType, key);
+  if (field) {
+    return field.kind === "enum" ? (field.enumName ?? undefined) : undefined;
+  }
+  return getFallbackFieldEnumName(key, recordType);
+};
+
+const getEnumLabels = (ctx: RenderContext, enumName: string) =>
+  getFcsEnumLabels(ctx.schema, enumName) ?? builtinEnumLabels[enumName];
 
 const formatItemTypeValue = (value: number) =>
   `${value} (itemType.${getItemTypeEnglishName(value)}: ${getItemTypeLabel(value)})`;
 
-const formatIntegerValue = (key: string, value: number, recordType?: number) => {
+const formatIntegerValue = (ctx: RenderContext, key: string, value: number, recordType: number) => {
   if (key === "itemtype limit") {
     return formatItemTypeValue(value);
   }
 
-  const label = getIntegerValueLabels(key, recordType)?.[value];
-  return label ? `${value} (${label})` : String(value);
+  const enumName = getEnumNameForField(ctx, recordType, key);
+  const label = enumName ? getEnumLabels(ctx, enumName)?.[value] : undefined;
+  if (!label) {
+    return String(value);
+  }
+  if (enumName === "DialogRepetitionEnum") {
+    const duration = repetitionLimitDurations[value];
+    return duration ? `${value} (${label}: ${duration})` : `${value} (${label})`;
+  }
+  return `${value} (${label})`;
+};
+
+const formatVector = (values: readonly number[]) => {
+  const names = ["x", "y", "z", "w"];
+  return values.map((value, index) => `${names[index]}=${formatFloatValue(value)}`).join(", ");
+};
+
+const formatValueEntry = (ctx: RenderContext, recordType: number, entry: RecordValueEntry) => {
+  switch (entry.kind) {
+    case "bool":
+      return entry.value ? "true" : "false";
+    case "int":
+      return formatIntegerValue(ctx, entry.key, entry.value as number, recordType);
+    case "float":
+      return formatFloatValue(entry.value as number);
+    case "vec3":
+    case "vec4":
+      return formatVector(entry.value as readonly number[]);
+    case "file":
+      return formatCode(entry.value as string);
+    default:
+      return escapeTableCell(String(entry.value));
+  }
+};
+
+const valuesEqual = (
+  left: RecordValueEntry["value"] | undefined,
+  right: RecordValueEntry["value"],
+) => {
+  if (left === undefined) {
+    return false;
+  }
+  if (Array.isArray(left) && Array.isArray(right)) {
+    return (
+      left.length === right.length &&
+      left.every((value, index) => Math.abs(value - right[index]!) < 1e-6)
+    );
+  }
+  if (typeof left === "number" && typeof right === "number") {
+    return Math.abs(left - right) < 1e-6;
+  }
+  return left === right;
+};
+
+const unquote = (value: string) =>
+  value.startsWith('"') && value.endsWith('"') ? value.slice(1, -1) : value;
+
+const getEnumValueNumber = (ctx: RenderContext, enumName: string, valueName: string) => {
+  const labels = getEnumLabels(ctx, enumName);
+  if (!labels) {
+    return undefined;
+  }
+  for (const [value, label] of Object.entries(labels)) {
+    if (label.endsWith(`.${valueName}`)) {
+      return Number(value);
+    }
+  }
+  return undefined;
+};
+
+/** 新規レコードで省略してよい既定値か。fcs.def があればその既定値、無ければ false / 0 / 空文字。 */
+const isDefaultValue = (ctx: RenderContext, recordType: number, entry: RecordValueEntry) => {
+  const { kind, value } = entry;
+  if ((kind === "string" || kind === "file") && value === "") {
+    return true;
+  }
+
+  if (!ctx.schema) {
+    return (
+      (kind === "bool" && value === false) ||
+      ((kind === "int" || kind === "float") && Math.abs(value as number) <= Number.EPSILON)
+    );
+  }
+
+  const field = getFieldDefinition(ctx, recordType, entry.key);
+  if (!field) {
+    return false;
+  }
+  return isFieldDefaultValue(ctx, field, kind, value);
+};
+
+const isFieldDefaultValue = (
+  ctx: RenderContext,
+  field: FcsFieldDefinition,
+  kind: RecordValueKind,
+  value: RecordValueEntry["value"],
+) => {
+  switch (field.kind) {
+    case "bool":
+      return kind === "bool" && value === (field.defaultText === "True");
+    case "int":
+      return kind === "int" && value === Number(field.defaultText);
+    case "float":
+      return (
+        (kind === "float" || kind === "int") &&
+        Math.abs((value as number) - Number(field.defaultText)) < 1e-6
+      );
+    case "enum":
+      return (
+        kind === "int" &&
+        field.enumName !== null &&
+        field.enumValue !== null &&
+        value === getEnumValueNumber(ctx, field.enumName, field.enumValue)
+      );
+    case "string":
+      return kind === "string" && value === unquote(field.defaultText);
+    default:
+      return false;
+  }
+};
+
+/**
+ * レコードの値 (文字列以外) を 1 行にまとめる。
+ * - 新規レコード: 既定値を省略
+ * - 変更レコード: 書き込まれている値はすべて上書きなので省略せず、元の値があれば併記
+ */
+const formatRecordValues = (
+  ctx: RenderContext,
+  record: InspectorRecord,
+  options: {
+    base?: InspectorRecord;
+    omitKeys?: ReadonlySet<string>;
+    preferredOrder?: readonly string[];
+  } = {},
+) => {
+  const isOverride = record.saveData.changeTypeName !== "New";
+  const preferredIndex = new Map((options.preferredOrder ?? []).map((key, index) => [key, index]));
+  let omittedDefaults = 0;
+
+  const entries = listRecordValues(record).filter((entry) => {
+    if (entry.kind === "string" || entry.kind === "file") {
+      return false;
+    }
+    if (options.omitKeys?.has(entry.key) || (entry.kind === "bool" && entry.key === "REMOVED")) {
+      return false;
+    }
+    if (!isOverride && isDefaultValue(ctx, record.type, entry)) {
+      omittedDefaults += 1;
+      return false;
+    }
+    return true;
+  });
+
+  entries.sort((left, right) => {
+    const leftPreferred = preferredIndex.get(left.key);
+    const rightPreferred = preferredIndex.get(right.key);
+    if (leftPreferred !== undefined || rightPreferred !== undefined) {
+      return (leftPreferred ?? 10_000) - (rightPreferred ?? 10_000);
+    }
+    return left.key.localeCompare(right.key, "en");
+  });
+
+  const parts = entries.map((entry) => {
+    noteUsedField(ctx, record.type, entry.key);
+    const formatted = `\`${escapeTableCell(entry.key)}\`=${formatValueEntry(ctx, record.type, entry)}`;
+    if (!options.base) {
+      return formatted;
+    }
+    const before = findRecordValue(options.base, entry.kind, entry.key);
+    if (before === undefined) {
+      return `${formatted} (new field)`;
+    }
+    if (valuesEqual(before, entry.value)) {
+      return `${formatted} (same as base)`;
+    }
+    return `${formatted} (base ${formatValueEntry(ctx, record.type, { ...entry, value: before })})`;
+  });
+
+  return { omittedDefaults, text: parts.join(" · ") };
+};
+
+// --- 参照 -------------------------------------------------------------------------
+
+const referenceCategoryHints: Readonly<Record<string, string>> = {
+  "AI contract": "dialog effect: starts an AI package as a contract job",
+  "change AI": "dialog effect: permanently changes the AI package",
+  "change relations": "dialog effect: changes relations with the faction",
+  "choosefrom list": "random squad member pool",
+  construction: "building construction ingredients or requirements",
+  "crowd trigger": "dialog effect: starts the dialogue on other squad members",
+  dialogs: "dialogue package entries; v0 is the event trigger",
+  effects: "dialog actions that run after this line is selected or reached",
+  "enable buildings": "research unlocks these buildings",
+  "enable research": "research unlocks these research records",
+  functionality: "building functionality record used by a building",
+  "give item": "dialog effect: gives the item to the target",
+  "has package": "condition: speaker has this dialogue package",
+  ingredients: "crafting or production ingredients",
+  inheritsFrom: "dialogue package inheritance",
+  interrupt: "dialog effect: replaces the speaker's player-talk dialogue temporarily",
+  "in town of": "condition: speaker is in a town of the faction",
+  "is character": "condition: speaker is this character",
+  items: "item/vendor/placement list; value meaning depends on the FCS field",
+  lines: "dialogue line children or reply options",
+  locks: "dialog effect: locks the dialogue",
+  "my faction": "condition: speaker belongs to the faction",
+  "my race": "condition: speaker race group",
+  "my subrace": "condition: speaker exact race",
+  nests: "biome or town spawn entries",
+  "no target race": "condition: target squad has none of these races",
+  parts: "building visual parts; values commonly include group/chance data",
+  produces: "production output item",
+  squad: "fixed squad member entries",
+  "target carrying character": "condition: target carries this character",
+  "target faction": "condition: target belongs to the faction",
+  "target has item": "condition: target squad has one of these items",
+  "target has item type": "condition: target squad has an item with the same item function",
+  "target race": "condition: target squad has a member of these race groups",
+  "trigger campaign": "dialog effect that starts a faction campaign",
+  "unlock but keep me": "dialog effect: unlocks the dialogue without locking this one",
+  unlocks: "dialog effect: unlocks the dialogue and locks this one",
+  "upgrades to": "building upgrade targets",
+  vendors: "character or faction vendor list",
+  weapons: "character or placement weapon entries",
+  "world state": "world-state condition entry",
+};
+
+const formatReferenceCategoryHint = (name: string) => {
+  const hint = referenceCategoryHints[name];
+  return hint ? ` - ${hint}` : "";
+};
+
+const formatEventTriggerName = (value: number) => {
+  const label = eventTriggerLabels[value];
+  return label ? label.replace(/^EventTriggerEnum\./, "") : `EV(${value})`;
 };
 
 const formatEventTriggerValue = (value: number) => {
@@ -1245,260 +588,291 @@ const formatEventTriggerValue = (value: number) => {
   return String(value);
 };
 
-const referenceCategoryHints: Record<string, string> = {
-  "AI contract": "dialog effect: starts an AI package contract",
-  "change AI": "dialog effect: permanently changes AI package",
-  construction: "building construction ingredients or requirements",
-  dialogs: "dialogue package entries; v0 is the FCS event trigger when known",
-  effects: "dialog actions that run after this line is selected or reached",
-  "enable buildings": "research unlocks these buildings",
-  "enable research": "research unlocks these research records",
-  functionality: "building functionality record used by a building",
-  ingredients: "crafting or production ingredients",
-  inheritsFrom: "dialogue package inheritance",
-  items: "item/vendor/placement list; value meaning depends on the FCS field",
-  lines: "dialogue line children or reply options",
-  nests: "biome or town spawn entries",
-  parts: "building visual parts; values commonly include group/chance data",
-  produces: "production output item",
-  squad: "fixed squad member entries",
-  "trigger campaign": "dialog effect that starts a faction campaign",
-  "upgrades to": "building upgrade targets",
-  vendors: "character or faction vendor list",
-  weapons: "character or placement weapon entries",
-  "world state": "world-state condition entry",
-  "choosefrom list": "random squad member pool",
-};
-
-const formatReferenceCategoryHint = (name: string) => {
-  const hint = referenceCategoryHints[name];
-  return hint ? ` - ${hint}` : "";
-};
-
-const uniquePreserveOrder = (items: readonly string[]) => {
-  const result: string[] = [];
-  const visited = new Set<string>();
-
-  for (const item of items) {
-    if (visited.has(item)) {
-      continue;
-    }
-
-    visited.add(item);
-    result.push(item);
+const trimTrailingZeroValues = (values: readonly number[]) => {
+  const result = [...values];
+  while (result.length > 0 && result.at(-1) === 0) {
+    result.pop();
   }
-
   return result;
 };
 
-const escapeTableCell = (value: string) =>
-  value.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
-
-const escapeFenced = (value: string) => value.replace(/```/g, "``\u200b`");
-
-const formatMultiline = (value: string) => {
-  if (value.length === 0) {
-    return "(empty)";
-  }
-
-  return "```text\n" + escapeFenced(value) + "\n```";
-};
-
-const pushIndentedBlock = (lines: string[], indent: string, block: string) => {
-  for (const line of block.split("\n")) {
-    lines.push(`${indent}${line}`);
-  }
-};
-
-const getReferenceCategory = (
-  record: InspectorRecord,
-  name: string,
-): ReferenceCategory | undefined =>
-  record.referenceCategories.find((category) => category.name === name);
-
-const getReferences = (record: InspectorRecord, name: string) =>
-  getReferenceCategory(record, name)?.references ?? [];
-
-const getStringValue = (record: InspectorRecord, key: string) =>
-  record.strings.find((entry) => entry.key === key)?.value ?? "";
-
-const getIntValue = (record: InspectorRecord, key: string) =>
-  record.values.ints.find((entry) => entry.key === key)?.value;
-
-const getDialogRelevantRecords = (records: readonly InspectorRecord[]) =>
-  records.filter((record) =>
-    [
-      dialogueTypeCode,
-      dialogueLineTypeCode,
-      dialogActionTypeCode,
-      dialoguePackageTypeCode,
-    ].includes(record.type),
-  );
-
-const isDialogRelevantRecord = (record: Pick<InspectorRecord, "type">) =>
-  [
-    dialogueTypeCode,
-    dialogueLineTypeCode,
-    dialogActionTypeCode,
-    dialoguePackageTypeCode,
-    84,
-  ].includes(record.type);
-
-const hasReferenceDetails = (record: InspectorRecord) =>
-  record.referenceCategories.some((category) => category.references.length > 0);
-
-const buildRecordIndex = (records: readonly InspectorRecord[]) => {
-  const byId = new Map<string, InspectorRecord>();
-  for (const record of records) {
-    if (record.stringId.length > 0) {
-      byId.set(record.stringId, record);
-    }
-  }
-  return byId;
-};
-
-const formatPrimitiveFields = (record: InspectorRecord, preferredOrder: readonly string[] = []) => {
-  const preferredIndex = new Map<string, number>();
-  preferredOrder.forEach((key, index) => {
-    preferredIndex.set(key, index);
-  });
-
-  const entries = [
-    ...record.values.bools.map((entry) => ({
-      key: entry.key,
-      sortGroup: "bool",
-      value: entry.value ? "true" : "false",
-    })),
-    ...record.values.ints.map((entry) => ({
-      key: entry.key,
-      sortGroup: "int",
-      value: formatIntegerValue(entry.key, entry.value, record.type),
-    })),
-    ...record.values.floats.map((entry) => ({
-      key: entry.key,
-      sortGroup: "float",
-      value: formatFloatValue(entry.value),
-    })),
-  ].sort((left, right) => {
-    const leftPreferred = preferredIndex.get(left.key);
-    const rightPreferred = preferredIndex.get(right.key);
-
-    if (leftPreferred !== undefined || rightPreferred !== undefined) {
-      return (leftPreferred ?? 10_000) - (rightPreferred ?? 10_000);
-    }
-
-    const groupCompare = left.sortGroup.localeCompare(right.sortGroup);
-    if (groupCompare !== 0) {
-      return groupCompare;
-    }
-
-    return left.key.localeCompare(right.key, "ja");
-  });
-
-  return entries.map((entry) => `\`${escapeTableCell(entry.key)}\`=${entry.value}`).join(" · ");
-};
-
-const formatFocusedPrimitiveFields = (record: InspectorRecord) => {
-  const entries = [
-    ...record.values.bools
-      .filter((entry) => entry.value)
-      .map((entry) => ({
-        key: entry.key,
-        sortGroup: "bool",
-        value: "true",
-      })),
-    ...record.values.ints
-      .filter((entry) => entry.value !== 0)
-      .map((entry) => ({
-        key: entry.key,
-        sortGroup: "int",
-        value: formatIntegerValue(entry.key, entry.value, record.type),
-      })),
-    ...record.values.floats
-      .filter((entry) => Math.abs(entry.value) > Number.EPSILON)
-      .map((entry) => ({
-        key: entry.key,
-        sortGroup: "float",
-        value: formatFloatValue(entry.value),
-      })),
-  ].sort((left, right) => {
-    const groupCompare = left.sortGroup.localeCompare(right.sortGroup);
-    if (groupCompare !== 0) {
-      return groupCompare;
-    }
-
-    return left.key.localeCompare(right.key, "ja");
-  });
-
-  return entries.map((entry) => `\`${escapeTableCell(entry.key)}\`=${entry.value}`).join(" · ");
-};
-
-const unsetReferenceValue = 2_147_483_647;
-
-const formatReferenceValue = (key: "v0" | "v1" | "v2", value: number, categoryName?: string) => {
-  if (categoryName === "dialogs" && key === "v0") {
-    return `${key}=${formatEventTriggerValue(value)}`;
-  }
-
-  if ((categoryName === "conditions" || categoryName === "effects") && key === "v0") {
-    if (value === unsetReferenceValue) {
-      return `${key}=value unset`;
-    }
-
-    return `${key}=value ${value}`;
-  }
-
-  if (categoryName === "AI contract" && key === "v0") {
-    return `${key}=hours ${value}`;
-  }
-
-  if (categoryName === "trigger campaign") {
-    if (key === "v0") {
-      return `${key}=min hours ${value}`;
-    }
-
-    if (key === "v1") {
-      return `${key}=max hours ${value}`;
-    }
-
-    if (key === "v2") {
-      return `${key}=chance% ${value}`;
-    }
-  }
-
-  if (categoryName === "lines" && key === "v0") {
-    if (value === unsetReferenceValue) {
-      return `${key}=line weight/chance unset`;
-    }
-
-    return `${key}=line weight/chance ${value}`;
-  }
-
-  return `${key}=${value}`;
-};
-
-const formatReferenceValues = (reference: Reference, categoryName?: string) => {
-  const values = [
-    ["v0", reference.value0],
-    ["v1", reference.value1],
-    ["v2", reference.value2],
-  ] as const;
-
-  return values.map(([key, value]) => formatReferenceValue(key, value, categoryName)).join(", ");
-};
-
-const inferReferenceSource = (targetId: string) => {
-  const separatorIndex = targetId.indexOf("-");
-  if (separatorIndex < 0 || separatorIndex === targetId.length - 1) {
-    return "";
-  }
-
-  return targetId.slice(separatorIndex + 1);
-};
-
-const getRecordLineageParts = (
-  record: Pick<InspectorRecord, "modName" | "saveData" | "stringId">,
+/** 参照の v0〜v2 を、分かっている範囲で意味のある形にする。表示不要なら空文字。 */
+const formatReferenceValues = (
+  ctx: RenderContext,
+  reference: Reference,
+  categoryName: string,
+  ownerType: number,
 ) => {
+  if (isRemovedReference(reference)) {
+    return "removed by this mod";
+  }
+
+  const { value0: v0, value1: v1, value2: v2 } = reference;
+  switch (categoryName) {
+    case "dialogs":
+      return `event ${formatEventTriggerName(v0)}`;
+    case "lines":
+      return v0 === 0 ? "" : `link value ${v0}`;
+    case "AI contract":
+      return `${v0} hours`;
+    case "trigger campaign":
+    case "victory trigger":
+    case "loss trigger":
+      return `starts after ${v0}-${v1} hours, ${v2}% chance`;
+    case "give item":
+      return v0 >= 50 ? `quantity ${v0} (treated as 1)` : `quantity ${v0}`;
+    case "crowd trigger":
+      return `${v0}% of squad members`;
+    case "world state":
+      return v0 === 1 ? "must be true" : v0 === 0 ? "must be false" : `state ${v0}`;
+    case "change relations":
+      return `relations ${formatSigned(v0)}`;
+    case "Leader AI Goals":
+    case "Squad AI Goals":
+    case "Squad2 AI Goals":
+    case "Slave AI Goals":
+      return `hours ${v0}-${v1}, weight ${v2}`;
+    default:
+      break;
+  }
+
+  const field = getFieldDefinition(ctx, ownerType, categoryName);
+  const meaningfulCount = field?.kind === "reference" ? field.referenceDefaults.length : undefined;
+  const values =
+    meaningfulCount === undefined
+      ? trimTrailingZeroValues([v0, v1, v2])
+      : [v0, v1, v2].slice(0, meaningfulCount);
+  if (meaningfulCount === 0 && (v0 !== 0 || v1 !== 0 || v2 !== 0)) {
+    return `v0=${v0}, v1=${v1}, v2=${v2}`;
+  }
+  return values.map((value, index) => `v${index}=${value}`).join(", ");
+};
+
+const formatResolvedTarget = (ctx: RenderContext, targetId: string) => {
+  const target = ctx.effectiveById.get(targetId);
+  if (!target) {
+    const source = inferReferenceSource(targetId);
+    return `\`${escapeTableCell(targetId)}\` · unresolved${source.length > 0 ? ` (ID from ${escapeTableCell(source)})` : ""}`;
+  }
+
+  const heading = renderInspectorHeading(target);
+  const idPart = heading === target.stringId ? "" : ` · \`${escapeTableCell(target.stringId)}\``;
+  const removedPart = target.removed ? " · removed record" : "";
+  return `${escapeTableCell(heading)}${idPart} · ${getItemTypeEnglishName(target.type)}${removedPart}`;
+};
+
+type ReferenceChange = "added" | "changed" | "removed" | "removed-missing" | "same" | null;
+
+const classifyReferenceChange = (
+  reference: Reference,
+  categoryName: string,
+  base: InspectorRecord | undefined,
+): ReferenceChange => {
+  if (!base) {
+    return isRemovedReference(reference) ? "removed-missing" : null;
+  }
+  const before = getReferences(base, categoryName).find(
+    (candidate) => candidate.targetId === reference.targetId,
+  );
+  if (isRemovedReference(reference)) {
+    return before ? "removed" : "removed-missing";
+  }
+  if (!before) {
+    return "added";
+  }
+  return before.value0 === reference.value0 &&
+    before.value1 === reference.value1 &&
+    before.value2 === reference.value2
+    ? "same"
+    : "changed";
+};
+
+const formatReferenceChangeTag = (
+  change: ReferenceChange,
+  ctx: RenderContext,
+  reference: Reference,
+  categoryName: string,
+  ownerType: number,
+  base: InspectorRecord | undefined,
+) => {
+  switch (change) {
+    case "added":
+      return " [added]";
+    case "same":
+      return " [unchanged]";
+    case "removed":
+      return " [removed]";
+    case "removed-missing":
+      return " [removed; not present in loaded base data]";
+    case "changed": {
+      const before = getReferences(base, categoryName).find(
+        (candidate) => candidate.targetId === reference.targetId,
+      );
+      const beforeText = before ? formatReferenceValues(ctx, before, categoryName, ownerType) : "";
+      return beforeText.length > 0 ? ` [changed; base ${beforeText}]` : " [changed]";
+    }
+    default:
+      return "";
+  }
+};
+
+interface DisplayReference {
+  change: ReferenceChange;
+  reference: Reference;
+}
+
+interface DisplayCategory {
+  entries: DisplayReference[];
+  name: string;
+}
+
+/** 対象 mod のレコード (差分) が持つ参照を、ベースに対する変化付きでそのまま並べる。 */
+const getDiffCategories = (record: InspectorRecord, base: InspectorRecord | undefined) =>
+  record.referenceCategories
+    .filter((category) => category.references.length > 0)
+    .map((category): DisplayCategory => ({
+      entries: category.references.map((reference) => ({
+        change: classifyReferenceChange(reference, category.name, base),
+        reference,
+      })),
+      name: category.name,
+    }));
+
+/**
+ * ゲーム内での参照一覧 (ベース + 対象 mod の追加・変更・削除) を並べる。
+ * 対象 mod が触れていないベースの参照には変化を付けない。削除された参照も [removed] として残す。
+ */
+const mergeDisplayReferences = (
+  diff: InspectorRecord,
+  base: InspectorRecord | undefined,
+  categoryName: string,
+): DisplayReference[] => {
+  const own = getReferences(diff, categoryName);
+  if (!base) {
+    return own.map((reference) => ({
+      change: isRemovedReference(reference) ? "removed-missing" : null,
+      reference,
+    }));
+  }
+
+  const result: DisplayReference[] = [];
+  const ownByTarget = new Map(own.map((reference) => [reference.targetId, reference]));
+  for (const reference of getReferences(base, categoryName)) {
+    const override = ownByTarget.get(reference.targetId);
+    if (!override) {
+      result.push({ change: null, reference });
+      continue;
+    }
+    ownByTarget.delete(reference.targetId);
+    const change = classifyReferenceChange(override, categoryName, base);
+    result.push({
+      change: change === "same" ? null : change,
+      reference: isRemovedReference(override) ? reference : override,
+    });
+  }
+  for (const reference of ownByTarget.values()) {
+    result.push({ change: classifyReferenceChange(reference, categoryName, base), reference });
+  }
+  return result;
+};
+
+const getEffectiveCategories = (
+  effective: InspectorRecord,
+  diff: InspectorRecord | undefined,
+  base: InspectorRecord | undefined,
+): DisplayCategory[] => {
+  if (!diff || !base) {
+    return getDiffCategories(effective, undefined);
+  }
+  const names = uniquePreserveOrder([
+    ...base.referenceCategories.map((category) => category.name),
+    ...diff.referenceCategories.map((category) => category.name),
+  ]);
+  return names
+    .map((name) => ({ entries: mergeDisplayReferences(diff, base, name), name }))
+    .filter((category) => category.entries.length > 0);
+};
+
+const renderReferenceCategories = (
+  lines: string[],
+  ctx: RenderContext,
+  ownerType: number,
+  categories: readonly DisplayCategory[],
+  options: { base?: InspectorRecord; indent?: string; omit?: ReadonlySet<string> } = {},
+) => {
+  const indent = options.indent ?? "";
+  for (const category of categories) {
+    if (category.entries.length === 0 || options.omit?.has(category.name)) {
+      continue;
+    }
+    noteUsedField(ctx, ownerType, category.name);
+    lines.push(
+      `${indent}- \`${escapeTableCell(category.name)}\`: ${pluralSuffix("reference", category.entries.length)}${formatReferenceCategoryHint(category.name)}`,
+    );
+    for (const { change, reference } of category.entries) {
+      const isRemoval = change === "removed" || change === "removed-missing";
+      const values = isRemoval
+        ? ""
+        : formatReferenceValues(ctx, reference, category.name, ownerType);
+      const valuePart = values.length > 0 ? ` (${values})` : "";
+      lines.push(
+        `${indent}  - ${formatResolvedTarget(ctx, reference.targetId)}${valuePart}${formatReferenceChangeTag(change, ctx, reference, category.name, ownerType, options.base)}`,
+      );
+    }
+  }
+};
+
+// --- ファイル・ベクトル・インスタンス ----------------------------------------------
+
+const renderFileFields = (
+  lines: string[],
+  ctx: RenderContext,
+  record: InspectorRecord,
+  base: InspectorRecord | undefined,
+) => {
+  const isOverride = record.saveData.changeTypeName !== "New";
+  const files = record.values.files.filter((entry) => isOverride || entry.value.length > 0);
+  if (files.length === 0) {
+    return;
+  }
+
+  lines.push("- Files:");
+  for (const entry of files) {
+    noteUsedField(ctx, record.type, entry.key);
+    const before = base ? findRecordValue(base, "file", entry.key) : undefined;
+    const basePart =
+      before === undefined || before === entry.value ? "" : ` (base ${formatCode(String(before))})`;
+    lines.push(
+      `  - \`${escapeTableCell(entry.key)}\`: ${entry.value.length > 0 ? formatCode(entry.value) : "(cleared)"}${basePart}`,
+    );
+  }
+};
+
+const renderInstanceFields = (lines: string[], ctx: RenderContext, record: InspectorRecord) => {
+  if (record.values.instances.length === 0) {
+    return;
+  }
+
+  lines.push(
+    `- Instances (placed objects; position x/y/z in decimetres, rotation as quaternion w/x/y/z): ${formatNumber(record.values.instances.length)}`,
+  );
+  for (const entry of record.values.instances) {
+    if (entry.targetId.length === 0) {
+      lines.push(`  - \`${escapeTableCell(entry.key)}\` · removed by this mod`);
+      continue;
+    }
+    const [x = 0, y = 0, z = 0, w = 1, qx = 0, qy = 0, qz = 0] = entry.values;
+    const statePart =
+      entry.states.length === 0 ? "" : ` · states: ${entry.states.map(escapeTableCell).join(", ")}`;
+    lines.push(
+      `  - \`${escapeTableCell(entry.key)}\` → ${formatResolvedTarget(ctx, entry.targetId)} · position ${formatVector([x, y, z])} · rotation w=${formatFloatValue(w)}, x=${formatFloatValue(qx)}, y=${formatFloatValue(qy)}, z=${formatFloatValue(qz)}${statePart}`,
+    );
+  }
+};
+
+// --- レコード詳細 (ダイアログ以外) ---------------------------------------------------
+
+const getRecordLineageParts = (ctx: RenderContext, record: InspectorRecord) => {
   const parts: string[] = [];
   const idSource = inferReferenceSource(record.stringId);
 
@@ -1506,438 +880,159 @@ const getRecordLineageParts = (
     parts.push(`ID source: ${escapeTableCell(idSource)}`);
   }
 
-  parts.push(`Change: ${record.saveData.changeTypeName}`);
-
-  if (record.saveData.saveCount > 0) {
-    parts.push(`Save count: ${formatNumber(record.saveData.saveCount)}`);
-  }
+  parts.push(`Change: ${getRecordStatus(record)}`);
 
   if (record.saveData.changeTypeName.startsWith("Unknown")) {
-    parts.push(`Raw saveData: ${record.saveData.raw}`);
+    parts.push(`Raw saveData: 0x${record.saveData.raw.toString(16)}`);
+  }
+
+  if (record.saveData.changeTypeName !== "New") {
+    const baseSources = (ctx.sourcesById.get(record.stringId) ?? []).filter(
+      (source) => normalizeModName(source) !== normalizeModName(record.modName),
+    );
+    if (baseSources.length > 0) {
+      parts.push(`Base from: ${uniquePreserveOrder(baseSources).map(escapeTableCell).join(" → ")}`);
+    } else if (ctx.project.contextRecords.length > 0) {
+      parts.push("Base record not in loaded reference context");
+    }
   }
 
   return parts;
 };
 
-const formatResolvedReference = (
-  reference: Reference,
-  recordById: ReadonlyMap<string, InspectorRecord>,
-  categoryName?: string,
-) => {
-  const targetRecord = recordById.get(reference.targetId);
-  const values = formatReferenceValues(reference, categoryName);
+const getComparisonBase = (ctx: RenderContext, record: InspectorRecord) =>
+  ctx.includeBaseComparison && record.saveData.changeTypeName !== "New"
+    ? ctx.baseById.get(record.stringId)
+    : undefined;
 
-  if (!targetRecord) {
-    const source = inferReferenceSource(reference.targetId);
-    const sourcePart = source.length > 0 ? ` · source: ${escapeTableCell(source)}` : "";
-
-    return `\`${escapeTableCell(reference.targetId)}\` · unresolved/unloaded${sourcePart} (${values})`;
-  }
-
-  const heading = renderInspectorHeading(targetRecord);
-  const idPart =
-    heading === targetRecord.stringId ? "" : ` · \`${escapeTableCell(targetRecord.stringId)}\``;
-
-  return `${escapeTableCell(heading)}${idPart} · ${renderTypeDescriptor(targetRecord.type)} (${values})`;
-};
-
-const renderGenericReferenceCategories = (
+/** 文字列・値・ファイル・参照・インスタンスを含むレコード 1 件分の詳細。 */
+const renderRecordDetail = (
   lines: string[],
+  ctx: RenderContext,
   record: InspectorRecord,
-  recordById: ReadonlyMap<string, InspectorRecord>,
-  omittedCategoryNames: readonly string[],
-  indent = "",
+  options: { describedElsewhere?: ReadonlySet<string> } = {},
 ) => {
-  const omitted = new Set(omittedCategoryNames);
-  const categories = record.referenceCategories.filter(
-    (category) => category.references.length > 0 && !omitted.has(category.name),
-  );
+  ctx.renderedRecordUids.add(record.uid);
+  const heading = renderInspectorHeading(record);
+  const base = getComparisonBase(ctx, record);
+  const metaParts: string[] = [];
 
-  if (categories.length === 0) {
-    return;
+  if (heading !== record.stringId) {
+    metaParts.push(`ID: \`${escapeTableCell(record.stringId)}\``);
   }
+  metaParts.push(`Type: ${renderTypeDescriptor(record.type)}`);
+  metaParts.push(...getRecordLineageParts(ctx, record));
 
-  for (const category of categories) {
+  lines.push(`#### ${escapeTableCell(heading)}`);
+  lines.push("");
+  lines.push(`- ${metaParts.join(" · ")}`);
+
+  if (base && base.name !== record.name && record.name.length > 0) {
+    lines.push(`- Renamed from: ${escapeTableCell(base.name)}`);
+  }
+  if (record.removed) {
     lines.push(
-      `${indent}- \`${escapeTableCell(category.name)}\`: ${pluralSuffix("reference", category.references.length)}${formatReferenceCategoryHint(category.name)}`,
+      base
+        ? `- Removed by this mod: deletes the base record "${escapeTableCell(base.name)}" (${getItemTypeEnglishName(base.type)}).`
+        : "- Removed by this mod (REMOVED flag): the record is deleted from the game.",
     );
-    for (const reference of category.references) {
-      lines.push(`${indent}  - ${formatResolvedReference(reference, recordById, category.name)}`);
-    }
-  }
-};
-
-const renderDialogActionReferences = (
-  lines: string[],
-  label: string,
-  references: readonly Reference[],
-  recordById: ReadonlyMap<string, InspectorRecord>,
-  categoryName: "conditions" | "effects",
-  indent = "",
-) => {
-  if (references.length === 0) {
-    return;
   }
 
-  lines.push(`${indent}- ${label}: ${pluralSuffix("action", references.length)}`);
-
-  for (const reference of references) {
-    const actionRecord = recordById.get(reference.targetId);
-    lines.push(`${indent}  - ${formatResolvedReference(reference, recordById, categoryName)}`);
-
-    if (!actionRecord) {
+  const isOverride = record.saveData.changeTypeName !== "New";
+  const strings = isOverride ? record.strings : getVisibleStringEntries(record);
+  for (const entry of strings) {
+    noteUsedField(ctx, record.type, entry.key);
+    if (entry.key === "description" && options.describedElsewhere?.has(record.uid)) {
+      lines.push("- `description`: shown in Entity Descriptions above");
       continue;
     }
-
-    const summary = formatDialogActionSummary(actionRecord, reference);
-    if (summary.length > 0) {
-      lines.push(`${indent}    - Summary: ${summary}`);
+    const before = base ? findRecordValue(base, "string", entry.key) : undefined;
+    pushTextValue(lines, "", `\`${escapeTableCell(entry.key)}\``, entry.value);
+    if (typeof before === "string" && before !== entry.value) {
+      pushTextValue(lines, "  ", "base value", before);
     }
-
-    const fields = formatPrimitiveFields(actionRecord);
-    if (fields.length > 0) {
-      lines.push(`${indent}    - Fields: ${fields}`);
-    }
-
-    const actionStrings = getVisibleStringEntries(actionRecord);
-    for (const entry of actionStrings) {
-      lines.push(
-        `${indent}    - \`${escapeTableCell(entry.key)}\`: ${escapeTableCell(entry.value)}`,
-      );
-    }
-
-    renderGenericReferenceCategories(lines, actionRecord, recordById, [], `${indent}    `);
-  }
-};
-
-const getFriendlyEnumName = (qualifiedName: string) => {
-  const enumName = qualifiedName.includes(".")
-    ? qualifiedName.slice(qualifiedName.lastIndexOf(".") + 1)
-    : qualifiedName;
-  return enumName
-    .replace(/^(?:DA|DC|DR|EV|T|OT)_/, "")
-    .replace(/^NULL_NULL_____/, "")
-    .replace(/_/g, " ")
-    .toLocaleLowerCase("en-US");
-};
-
-const formatDialogConditionSummary = (record: InspectorRecord, reference: Reference) => {
-  const conditionName = getIntValue(record, "condition name");
-  if (conditionName === undefined) {
-    return "";
   }
 
-  const conditionLabel =
-    dialogConditionLabels[conditionName] ?? `DialogConditionEnum(${conditionName})`;
-  const who = getIntValue(record, "who");
-  const compareBy = getIntValue(record, "compare by");
-  const tag = getIntValue(record, "tag");
-  const stringVar = getStringValue(record, "stringvar");
-  const parts = [`condition ${getFriendlyEnumName(conditionLabel)} (${conditionLabel})`];
-
-  if (who !== undefined) {
-    parts.push(`who ${formatIntegerValue("who", who, record.type)}`);
+  const values = formatRecordValues(ctx, record, { base });
+  if (values.text.length > 0) {
+    lines.push(`- Values: ${values.text}`);
   }
-
-  if (compareBy !== undefined) {
-    parts.push(`compare ${formatIntegerValue("compare by", compareBy, record.type)}`);
-  }
-
-  if (reference.value0 !== 0 && reference.value0 !== unsetReferenceValue) {
-    parts.push(`value ${reference.value0}`);
-  }
-
-  if (tag !== undefined && tag !== 0) {
-    parts.push(`tag ${tag}`);
-  }
-
-  if (stringVar.length > 0) {
-    parts.push(`string "${escapeTableCell(stringVar)}"`);
-  }
-
-  return parts.join(" · ");
-};
-
-const formatDialogEffectSummary = (record: InspectorRecord, reference: Reference) => {
-  const actionName = getIntValue(record, "action name");
-  if (actionName === undefined) {
-    return "";
-  }
-
-  const actionLabel = dialogActionLabels[actionName] ?? `DialogActionEnum(${actionName})`;
-  const who = getIntValue(record, "who");
-  const parts = [`effect ${getFriendlyEnumName(actionLabel)} (${actionLabel})`];
-
-  if (who !== undefined) {
-    parts.push(`who ${formatIntegerValue("who", who, record.type)}`);
-  }
-
-  if (reference.value0 !== 0 && reference.value0 !== unsetReferenceValue) {
-    parts.push(`value ${reference.value0}`);
-  }
-
-  return parts.join(" · ");
-};
-
-const formatDialogActionSummary = (record: InspectorRecord, reference: Reference) =>
-  formatDialogConditionSummary(record, reference) || formatDialogEffectSummary(record, reference);
-
-const formatVector3 = (value: { x: number; y: number; z: number }) =>
-  `x=${formatFloatValue(value.x)}, y=${formatFloatValue(value.y)}, z=${formatFloatValue(value.z)}`;
-
-const formatVector4 = (value: { w: number; x: number; y: number; z: number }) =>
-  `${formatVector3(value)}, w=${formatFloatValue(value.w)}`;
-
-const renderFileFields = (lines: string[], record: InspectorRecord) => {
-  if (record.values.files.length === 0) {
-    return;
-  }
-
-  lines.push("- File fields:");
-  for (const entry of record.values.files) {
-    lines.push(`  - \`${escapeTableCell(entry.key)}\`: \`${escapeTableCell(entry.value)}\``);
-  }
-  lines.push("");
-};
-
-const renderVectorFields = (lines: string[], record: InspectorRecord) => {
-  if (record.values.vector3s.length === 0 && record.values.vector4s.length === 0) {
-    return;
-  }
-
-  lines.push("- Vector fields:");
-  for (const entry of record.values.vector3s) {
-    lines.push(`  - \`${escapeTableCell(entry.key)}\`: ${formatVector3(entry)}`);
-  }
-  for (const entry of record.values.vector4s) {
-    lines.push(`  - \`${escapeTableCell(entry.key)}\`: ${formatVector4(entry)}`);
-  }
-  lines.push("");
-};
-
-const renderInstanceFields = (lines: string[], record: InspectorRecord) => {
-  if (record.values.instances.length === 0) {
-    return;
-  }
-
-  lines.push("- Instance fields:");
-  for (const entry of record.values.instances) {
-    const values = entry.values.map((value) => formatFloatValue(value)).join(", ");
-    const statePart =
-      entry.states.length === 0 ? "" : ` · states: ${entry.states.map(escapeTableCell).join(", ")}`;
+  if (values.omittedDefaults > 0) {
     lines.push(
-      `  - \`${escapeTableCell(entry.key)}\` -> \`${escapeTableCell(entry.targetId)}\` · values: ${values}${statePart}`,
+      `- Default values omitted: ${formatNumber(values.omittedDefaults)}${ctx.schema ? " (equal to the fcs.def default)" : " (false / 0)"}`,
     );
   }
-  lines.push("");
-};
 
-const renderNonDialogRecordSupplement = (
-  lines: string[],
-  record: InspectorRecord,
-  recordById: ReadonlyMap<string, InspectorRecord>,
-) => {
-  if (isDialogRelevantRecord(record)) {
-    return;
-  }
-
-  const focusedFields = formatFocusedPrimitiveFields(record);
-  if (focusedFields.length > 0) {
-    lines.push("- Primitive values shown: false bools and numeric zeroes omitted for readability.");
-    lines.push(`  - ${focusedFields}`);
-    lines.push("");
-  }
-
-  renderFileFields(lines, record);
-  renderVectorFields(lines, record);
-  renderInstanceFields(lines, record);
+  renderFileFields(lines, ctx, record, base);
+  renderInstanceFields(lines, ctx, record);
 
   if (hasReferenceDetails(record)) {
     lines.push("- References:");
-    renderGenericReferenceCategories(lines, record, recordById, [], "  ");
-    lines.push("");
-  }
-};
-
-const pluralSuffix = (label: string, count: number) =>
-  `${formatNumber(count)} ${label}${count === 1 ? "" : "s"}`;
-
-const collectDeclaredDependencies = (mods: readonly LoadedMod[]) =>
-  uniquePreserveOrder(mods.flatMap((mod) => mod.header.dependencies));
-
-const collectDeclaredReferences = (mods: readonly LoadedMod[]) =>
-  uniquePreserveOrder(mods.flatMap((mod) => mod.header.references));
-
-const getTargetMods = (project: ModProject) => project.mods.filter((mod) => mod.role === "target");
-
-const getReferenceMods = (project: ModProject) =>
-  project.mods.filter((mod) => mod.role === "reference");
-
-const getLookupInspectorRecords = (project: ModProject) => [
-  ...project.contextRecords,
-  ...project.inspectorRecords,
-];
-
-const getLookupDialogRecords = (
-  project: ModProject,
-  targetDialogRecords: readonly DialogRecord[],
-) => {
-  const contextDialogRecords = project.contextTextRecords.filter(
-    (record): record is DialogRecord => record.kind === "dialog",
-  );
-
-  return [...contextDialogRecords, ...targetDialogRecords];
-};
-
-const normalizeModName = (value: string) => value.replace(/\.(mod|base)$/i, "");
-
-const getVisibleStringEntries = (record: Pick<InspectorRecord, "strings">) =>
-  record.strings.filter((entry) => entry.value.length > 0);
-
-const getVisibleDialogTexts = (record: DialogRecord) =>
-  record.texts.filter((text) => text.original.length > 0);
-
-type StringRenderStats = {
-  emptyOnlyRecordCount: number;
-  omittedNoStringRecordCount: number;
-  renderedFieldCount: number;
-  renderedRecordCount: number;
-  totalFieldCount: number;
-  totalRecordCount: number;
-};
-
-type DialogRenderStats = {
-  omittedEmptyRecordCount: number;
-  omittedEmptyTextCount: number;
-  renderedRecordCount: number;
-  renderedTextCount: number;
-  totalRecordCount: number;
-  totalTextCount: number;
-};
-
-const summarizeStringRecords = (records: readonly InspectorRecord[]): StringRenderStats => {
-  let emptyOnlyRecordCount = 0;
-  let omittedNoStringRecordCount = 0;
-  let renderedFieldCount = 0;
-  let renderedRecordCount = 0;
-  let totalFieldCount = 0;
-  let totalRecordCount = 0;
-
-  for (const record of records) {
-    if (record.strings.length === 0) {
-      omittedNoStringRecordCount += 1;
-      continue;
-    }
-
-    totalRecordCount += 1;
-    totalFieldCount += record.strings.length;
-
-    const visibleStringCount = getVisibleStringEntries(record).length;
-    if (visibleStringCount === 0) {
-      emptyOnlyRecordCount += 1;
-      continue;
-    }
-
-    renderedRecordCount += 1;
-    renderedFieldCount += visibleStringCount;
+    renderReferenceCategories(lines, ctx, record.type, getDiffCategories(record, base), {
+      base,
+      indent: "  ",
+    });
   }
 
+  lines.push("");
+};
+
+// --- 集計 -------------------------------------------------------------------------
+
+const countBy = <T, K>(items: readonly T[], getKey: (item: T) => K) => {
+  const counts = new Map<K, number>();
+  for (const item of items) {
+    const key = getKey(item);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return [...counts.entries()].sort((left, right) => right[1] - left[1]);
+};
+
+interface ProjectSummary {
+  dialogLineRecordCount: number;
+  noStringRecordCount: number;
+  removedCount: number;
+  renamedCount: number;
+  stringRecordCount: number;
+  statusCounts: Map<string, number>;
+}
+
+const summarizeProject = (project: ModProject): ProjectSummary => {
+  let noStringRecordCount = 0;
+  let stringRecordCount = 0;
+  let dialogLineRecordCount = 0;
+  for (const record of project.inspectorRecords) {
+    if (record.type === dialogueLineTypeCode) {
+      dialogLineRecordCount += 1;
+    }
+    if (isDialogRelevantRecord(record)) {
+      continue;
+    }
+    if (getVisibleStringEntries(record).length > 0) {
+      stringRecordCount += 1;
+    } else if (!hasReferenceDetails(record)) {
+      noStringRecordCount += 1;
+    }
+  }
+  const statusCounts = new Map(countBy(project.inspectorRecords, getRecordStatus));
   return {
-    emptyOnlyRecordCount,
-    omittedNoStringRecordCount,
-    renderedFieldCount,
-    renderedRecordCount,
-    totalFieldCount,
-    totalRecordCount,
+    dialogLineRecordCount,
+    noStringRecordCount,
+    removedCount: statusCounts.get("Removed") ?? 0,
+    renamedCount: statusCounts.get("Renamed") ?? 0,
+    statusCounts,
+    stringRecordCount,
   };
 };
 
-const summarizeDialogRecords = (records: readonly DialogRecord[]): DialogRenderStats => {
-  let omittedEmptyRecordCount = 0;
-  let omittedEmptyTextCount = 0;
-  let renderedRecordCount = 0;
-  let renderedTextCount = 0;
-  let totalRecordCount = 0;
-  let totalTextCount = 0;
+// --- 各セクション -----------------------------------------------------------------
 
-  for (const record of records) {
-    totalRecordCount += 1;
-    totalTextCount += record.texts.length;
-
-    const visibleTextCount = getVisibleDialogTexts(record).length;
-    omittedEmptyTextCount += record.texts.length - visibleTextCount;
-
-    if (visibleTextCount === 0) {
-      omittedEmptyRecordCount += 1;
-      continue;
-    }
-
-    renderedRecordCount += 1;
-    renderedTextCount += visibleTextCount;
-  }
-
-  return {
-    omittedEmptyRecordCount,
-    omittedEmptyTextCount,
-    renderedRecordCount,
-    renderedTextCount,
-    totalRecordCount,
-    totalTextCount,
-  };
-};
-
-const countCategories = (records: readonly InspectorRecord[]) => {
-  const counts = new Map<ItemCategory, number>();
-  for (const record of records) {
-    const category = getItemCategory(record.type);
-    counts.set(category, (counts.get(category) ?? 0) + 1);
-  }
-  return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
-};
-
-const countTypes = (records: readonly InspectorRecord[]) => {
-  const counts = new Map<number, number>();
-  for (const record of records) {
-    counts.set(record.type, (counts.get(record.type) ?? 0) + 1);
-  }
-  return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
-};
-
-const countChangeTypes = (records: readonly InspectorRecord[]) => {
-  const counts = new Map<string, number>();
-  for (const record of records) {
-    counts.set(
-      record.saveData.changeTypeName,
-      (counts.get(record.saveData.changeTypeName) ?? 0) + 1,
-    );
-  }
-  return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
-};
-
-const countIdSources = (records: readonly InspectorRecord[]) => {
-  const counts = new Map<string, number>();
-  for (const record of records) {
-    const source = inferReferenceSource(record.stringId) || "(unknown)";
-    counts.set(source, (counts.get(source) ?? 0) + 1);
-  }
-  return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
-};
-
-const renderHeader = (project: ModProject) => {
-  const totalRecords = project.inspectorRecords.length;
+const renderHeader = (ctx: RenderContext, summary: ProjectSummary, schemaSource: string | null) => {
+  const { project } = ctx;
   const targetMods = getTargetMods(project);
   const referenceMods = getReferenceMods(project);
-  const stringStats = summarizeStringRecords(project.inspectorRecords);
-  const dialogRecords = project.textRecords.filter(
-    (record): record is DialogRecord => record.kind === "dialog",
-  );
-  const dialogStats = summarizeDialogRecords(dialogRecords);
-  const referenceOnlyRecords = getReferenceOnlyRecords(project.inspectorRecords);
-  const changeCounts = new Map(countChangeTypes(project.inspectorRecords));
-  const entityRecordCount = project.textRecords.length - dialogRecords.length;
-  const visibleTextRecordCount = dialogStats.renderedRecordCount + entityRecordCount;
-
   const lines: string[] = [];
+
   lines.push("# Kenshi Mod Markdown Export");
   lines.push("");
   if (referenceMods.length > 0) {
@@ -1945,7 +1040,7 @@ const renderHeader = (project: ModProject) => {
       "This file is a target-focused Markdown dump of the selected Kenshi `.mod` / `.base` files,",
     );
     lines.push(
-      "with reference context loaded only for resolving names, dialogue links, and cross-mod relationships.",
+      "with reference context loaded only for resolving names, dialogue links, base values, and cross-mod relationships.",
     );
   } else {
     lines.push("This file is a merged Markdown dump of all loaded Kenshi `.mod` / `.base` files,");
@@ -1955,31 +1050,32 @@ const renderHeader = (project: ModProject) => {
   lines.push("## File Summary");
   lines.push("");
   lines.push("### Purpose");
-  lines.push("Provide a complete and prompt-friendly snapshot of the selected mods,");
-  lines.push("including metadata, record inventory, non-empty string fields, and extracted");
-  lines.push("dialog or description-heavy records.");
+  lines.push(
+    "Provide a complete and prompt-friendly snapshot of the selected mods: metadata, record inventory, every record the mod adds, changes, renames or removes, extracted text, dialogue structure, and referenced asset files.",
+  );
   lines.push("");
-  lines.push("### Usage Guidelines");
-  lines.push("- Start with `Extracted Text Records` when reviewing lore, dialogue, or");
-  lines.push("  text that is likely to matter to an LLM task.");
+  lines.push("### Reading Guide");
   lines.push(
-    "- In dialog sections, read `Dialog Structures` before the flat text list; it resolves packages, dialogue roots, line/reply links, conditions, effects, and raw reference values.",
+    "- Each record has a `Change` status: `New` (added by the mod), `Changed` (overrides only the fields listed), `Renamed` (changed and renamed), or `Removed` (the mod deletes the record via the FCS `REMOVED` flag).",
   );
   lines.push(
-    "- Use `String-bearing Records` when you need the raw non-empty string payload and exact keys",
-  );
-  lines.push("  from the source mod data.");
-  lines.push("- Records with no string fields are omitted from the raw dump, while");
-  lines.push("  their counts still contribute to the summary tables.");
-  lines.push(
-    "- Non-string fields are summarized globally, while dialog-relevant primitive fields and references are preserved in detail.",
+    "- In `Changed` / `Renamed` records every listed value is an override. `(base X)` shows the value before this mod when the reference context contains the original record; `(same as base)` means the override does not change anything.",
   );
   lines.push(
-    "- Empty string values are omitted from dialog and raw sections to reduce prompt noise.",
+    "- References tagged `[added]`, `[changed]` or `[removed]` describe how the mod edits a list inherited from the base record. A reference whose values are all 2147483647 is the FCS marker for deleting that entry.",
+  );
+  lines.push(
+    `- Values equal to the default are omitted from \`New\` records${schemaSource ? " (defaults come from fcs.def; see the Field Glossary)" : " (false / 0)"}. Empty strings are omitted.`,
+  );
+  lines.push(
+    "- `Dialog Structures` shows packages → dialogues → lines → replies. Every line is expanded once; later appearances point back with `↪ shown above`. Conditions and effects are written as readable expressions, and `score≈N` is the selection score estimated with the community-documented formula (higher scores are tried first).",
+  );
+  lines.push(
+    "- `Records Without Strings or References` lists records that only change numbers, rename something, or remove a record; they are easy to miss but change gameplay.",
   );
   lines.push("");
   lines.push("### Metrics");
-  lines.push(`- Source project: **${project.sourceModName}**`);
+  lines.push(`- Source project: **${escapeTableCell(project.sourceModName)}**`);
   lines.push(`- Target mods: **${formatNumber(targetMods.length)}**`);
   if (referenceMods.length > 0) {
     lines.push(`- Reference mods: **${formatNumber(referenceMods.length)}**`);
@@ -1987,70 +1083,46 @@ const renderHeader = (project: ModProject) => {
       `- Reference records available for resolution: **${formatNumber(project.contextRecords.length)}**`,
     );
   }
-  lines.push(`- Target records: **${formatNumber(totalRecords)}**`);
-  lines.push(`- New records: **${formatNumber(changeCounts.get("New") ?? 0)}**`);
-  lines.push(`- Changed records: **${formatNumber(changeCounts.get("Changed") ?? 0)}**`);
+  lines.push(`- Target records: **${formatNumber(project.inspectorRecords.length)}**`);
+  for (const status of ["New", "Changed", "Renamed", "Removed"]) {
+    lines.push(`- ${status} records: **${formatNumber(summary.statusCounts.get(status) ?? 0)}**`);
+  }
+  for (const [status, count] of summary.statusCounts) {
+    if (!["New", "Changed", "Renamed", "Removed"].includes(status)) {
+      lines.push(`- ${escapeTableCell(status)} records: **${formatNumber(count)}**`);
+    }
+  }
+  lines.push(`- Non-dialogue records with strings: **${formatNumber(summary.stringRecordCount)}**`);
   lines.push(
-    `- Rendered string-bearing records: **${formatNumber(stringStats.renderedRecordCount)}**`,
+    `- Records without strings or references: **${formatNumber(summary.noStringRecordCount)}**`,
   );
-  lines.push(`- Rendered string fields: **${formatNumber(stringStats.renderedFieldCount)}**`);
-  lines.push(
-    `- Omitted empty string fields: **${formatNumber(stringStats.totalFieldCount - stringStats.renderedFieldCount)}**`,
-  );
-  lines.push(`- Extracted text records: **${formatNumber(visibleTextRecordCount)}**`);
-  lines.push(`- Extracted dialog lines: **${formatNumber(dialogStats.renderedTextCount)}**`);
-  lines.push(
-    `- Reference-bearing records without visible strings: **${formatNumber(referenceOnlyRecords.length)}**`,
-  );
-  lines.push(
-    `- Omitted empty dialog variants: **${formatNumber(dialogStats.omittedEmptyTextCount)}**`,
-  );
+  lines.push(`- Dialogue line records: **${formatNumber(summary.dialogLineRecordCount)}**`);
   lines.push(
     `- Declared dependencies: **${formatNumber(collectDeclaredDependencies(targetMods).length)}**`,
+  );
+  if (project.assetReferences.length > 0) {
+    const missing = project.assetReferences.filter((asset) => asset.status === "missing").length;
+    lines.push(
+      `- Referenced asset files: **${formatNumber(project.assetReferences.length)}** (missing: **${formatNumber(missing)}**)`,
+    );
+  }
+  lines.push(
+    `- Field semantics: ${schemaSource ? `FCS definitions (fcs.def / fcs_enums.def) from ${escapeInline(schemaSource)}` : "built-in enum tables only"}`,
   );
   lines.push("");
 
   return lines.join("\n");
 };
 
-const renderNavigation = (project: ModProject) => {
-  const targetMods = getTargetMods(project);
-  const lines: string[] = [];
-  lines.push("## Navigation");
-  lines.push("");
-  lines.push("- [Directory Structure](#directory-structure)");
-
-  if (getReferenceMods(project).length > 0) {
-    lines.push("- [Reference Context](#reference-context)");
+const renderNavigation = (
+  sections: ReadonlyArray<{ anchor: string; content: string; title: string }>,
+) => {
+  const lines: string[] = ["## Navigation", ""];
+  for (const section of sections) {
+    if (section.content.length > 0) {
+      lines.push(`- [${section.title}](#${section.anchor})`);
+    }
   }
-
-  if (collectDeclaredDependencies(targetMods).length > 0) {
-    lines.push("- [Declared Dependencies](#declared-dependencies)");
-  }
-
-  if (collectDeclaredReferences(targetMods).length > 0) {
-    lines.push("- [Declared References](#declared-references)");
-  }
-
-  lines.push("- [Category Breakdown](#category-breakdown)");
-  lines.push("- [Item Type Breakdown](#item-type-breakdown)");
-  lines.push("- [Record Change Breakdown](#record-change-breakdown)");
-  lines.push("- [Mods](#mods)");
-
-  if (project.textRecords.length > 0) {
-    lines.push("- [Extracted Text Records](#extracted-text-records)");
-  }
-
-  if (project.inspectorRecords.some((record) => record.strings.length > 0)) {
-    lines.push("- [String-bearing Records](#string-bearing-records)");
-  }
-
-  if (getReferenceOnlyRecords(project.inspectorRecords).length > 0) {
-    lines.push(
-      "- [Reference-bearing Records Without Visible Strings](#reference-bearing-records-without-visible-strings)",
-    );
-  }
-
   lines.push("");
   return lines.join("\n");
 };
@@ -2068,7 +1140,7 @@ const renderStructure = (project: ModProject) => {
     lines.push(`    ${mod.fileName}  (${pluralSuffix("record", mod.recordCount)})`);
   }
   if (referenceMods.length > 0) {
-    lines.push("  reference-context/");
+    lines.push("  reference-context/  (load order)");
     for (const mod of referenceMods) {
       lines.push(`    ${mod.fileName}  (${pluralSuffix("record", mod.recordCount)})`);
     }
@@ -2080,32 +1152,44 @@ const renderStructure = (project: ModProject) => {
 
 const renderReferenceContext = (project: ModProject) => {
   const referenceMods = getReferenceMods(project);
-  if (referenceMods.length === 0) {
+  if (referenceMods.length === 0 && project.failedMods.length === 0) {
     return "";
   }
 
   const lines: string[] = [];
   lines.push("## Reference Context");
   lines.push("");
-  lines.push(
-    "Reference mods are not rendered as target content. They are loaded so references from the selected mod can resolve to readable names, types, dialogue text, conditions, and effects.",
-  );
-  lines.push("");
-  lines.push("| Mod | Records | Text records | Dependencies |");
-  lines.push("| --- | ---: | ---: | --- |");
-  for (const mod of referenceMods) {
-    const textRecordCount = project.contextTextRecords.filter(
-      (record) => record.modName === normalizeModName(mod.fileName),
-    ).length;
+  if (referenceMods.length > 0) {
     lines.push(
-      `| ${escapeTableCell(mod.fileName)} | ${formatNumber(mod.recordCount)} | ${formatNumber(textRecordCount)} | ${
-        mod.header.dependencies.length === 0
-          ? "—"
-          : mod.header.dependencies.map(escapeTableCell).join(", ")
-      } |`,
+      "Reference mods are not rendered as target content. They are merged in load order (vanilla base files first, the same rule the game and OpenConstructionSet use) so references from the selected mod resolve to readable names, base values, dialogue text, conditions, and effects.",
     );
+    lines.push("");
+    const textCounts = new Map(
+      countBy(project.contextTextRecords, (record) => normalizeModName(record.modName)),
+    );
+    lines.push("| Order | Mod | Records | Text records | Dependencies |");
+    lines.push("| ---: | --- | ---: | ---: | --- |");
+    referenceMods.forEach((mod, index) => {
+      lines.push(
+        `| ${index + 1} | ${escapeTableCell(mod.fileName)} | ${formatNumber(mod.recordCount)} | ${formatNumber(textCounts.get(normalizeModName(mod.fileName)) ?? 0)} | ${
+          mod.header.dependencies.length === 0
+            ? "—"
+            : mod.header.dependencies.map(escapeTableCell).join(", ")
+        } |`,
+      );
+    });
+    lines.push("");
   }
-  lines.push("");
+  if (project.failedMods.length > 0) {
+    lines.push("### Files That Could Not Be Parsed");
+    lines.push("");
+    for (const failed of project.failedMods) {
+      lines.push(
+        `- \`${escapeTableCell(failed.filePath)}\` (${failed.role}): ${escapeTableCell(failed.error)}`,
+      );
+    }
+    lines.push("");
+  }
   return lines.join("\n");
 };
 
@@ -2118,7 +1202,7 @@ const renderDependencies = (mods: readonly LoadedMod[]) => {
     lines.push("## Declared Dependencies");
     lines.push("");
     for (const dependency of dependencies) {
-      lines.push(`- ${dependency}`);
+      lines.push(`- ${escapeTableCell(dependency)}`);
     }
     lines.push("");
   }
@@ -2127,7 +1211,7 @@ const renderDependencies = (mods: readonly LoadedMod[]) => {
     lines.push("## Declared References");
     lines.push("");
     for (const reference of references) {
-      lines.push(`- ${reference}`);
+      lines.push(`- ${escapeTableCell(reference)}`);
     }
     lines.push("");
   }
@@ -2136,7 +1220,7 @@ const renderDependencies = (mods: readonly LoadedMod[]) => {
 };
 
 const renderCategoryBreakdown = (records: readonly InspectorRecord[]) => {
-  const counts = countCategories(records);
+  const counts = countBy(records, (record) => getItemCategory(record.type));
   if (counts.length === 0) {
     return "";
   }
@@ -2146,7 +1230,7 @@ const renderCategoryBreakdown = (records: readonly InspectorRecord[]) => {
   lines.push("");
   lines.push("| Category | Records |");
   lines.push("| --- | ---: |");
-  for (const [category, count] of counts) {
+  for (const [category, count] of counts as Array<[ItemCategory, number]>) {
     lines.push(`| ${itemCategoryLabels[category]} (${category}) | ${formatNumber(count)} |`);
   }
   lines.push("");
@@ -2154,7 +1238,7 @@ const renderCategoryBreakdown = (records: readonly InspectorRecord[]) => {
 };
 
 const renderTypeBreakdown = (records: readonly InspectorRecord[]) => {
-  const counts = countTypes(records);
+  const counts = countBy(records, (record) => record.type);
   if (counts.length === 0) {
     return "";
   }
@@ -2184,19 +1268,17 @@ const renderRecordChangeBreakdown = (project: ModProject) => {
   const referenceModNames = new Set(
     getReferenceMods(project).map((mod) => normalizeModName(mod.fileName)),
   );
-  const changeCounts = countChangeTypes(project.inspectorRecords);
-  const sourceCounts = countIdSources(project.inspectorRecords);
   const lines: string[] = [];
 
   lines.push("## Record Change Breakdown");
   lines.push("");
   lines.push(
-    "Change type comes from Kenshi item save data: `New` means added by the active mod, `Changed` means an existing record was edited, and `Renamed` means the active mod changed the record name.",
+    "Change type comes from the item save data written by the FCS: `New` = added by the mod, `Changed` = an existing record is edited (only the stored fields are overridden), `Renamed` = edited and renamed, `Removed` = deleted by the mod (`REMOVED` flag).",
   );
   lines.push("");
   lines.push("| Change type | Records |");
   lines.push("| --- | ---: |");
-  for (const [changeType, count] of changeCounts) {
+  for (const [changeType, count] of countBy(project.inspectorRecords, getRecordStatus)) {
     lines.push(`| ${escapeTableCell(changeType)} | ${formatNumber(count)} |`);
   }
   lines.push("");
@@ -2208,7 +1290,10 @@ const renderRecordChangeBreakdown = (project: ModProject) => {
   lines.push("");
   lines.push("| ID source | Records | Relation to loaded mod |");
   lines.push("| --- | ---: | --- |");
-  for (const [source, count] of sourceCounts) {
+  for (const [source, count] of countBy(
+    project.inspectorRecords,
+    (record) => inferReferenceSource(record.stringId) || "(unknown)",
+  )) {
     const normalizedSource = normalizeModName(source);
     const relation = loadedModNames.has(normalizedSource)
       ? "target mod"
@@ -2228,19 +1313,38 @@ const renderMods = (mods: readonly LoadedMod[]) => {
   lines.push("");
 
   for (const mod of mods) {
-    lines.push(`### ${mod.fileName}`);
+    lines.push(`### ${escapeTableCell(mod.fileName)}`);
     lines.push("");
     lines.push("| Field | Value |");
     lines.push("| --- | --- |");
-    lines.push(`| Role | ${mod.role === "target" ? "target export" : "reference context"} |`);
-    lines.push(`| File type | ${mod.header.fileType} |`);
+    lines.push(
+      `| Role | ${mod.role === "target" ? "target export" : `reference context (load order ${mod.loadOrder})`} |`,
+    );
+    if (mod.info) {
+      if (mod.info.title.length > 0) {
+        lines.push(`| Title | ${escapeTableCell(mod.info.title)} |`);
+      }
+      if (mod.info.id.length > 0 && mod.info.id !== "0") {
+        lines.push(`| Workshop ID | ${escapeTableCell(mod.info.id)} |`);
+      }
+      if (mod.info.tags.length > 0) {
+        lines.push(`| Tags | ${mod.info.tags.map(escapeTableCell).join(", ")} |`);
+      }
+      if (mod.info.lastUpdate.length > 0) {
+        lines.push(`| Last update | ${escapeTableCell(mod.info.lastUpdate)} |`);
+      }
+    }
+    lines.push(
+      `| File type | ${mod.header.fileType}${mod.header.fileType === 16 ? " (legacy format)" : ""} |`,
+    );
     lines.push(`| Version | ${mod.header.version} |`);
     lines.push(
-      `| Author | ${
-        mod.header.author.length > 0 ? escapeTableCell(mod.header.author) : "(unknown)"
-      } |`,
+      `| Author | ${mod.header.author.length > 0 ? escapeTableCell(mod.header.author) : "(unknown)"} |`,
     );
     lines.push(`| Record count | ${formatNumber(mod.recordCount)} |`);
+    if (mod.header.saveCount > 0) {
+      lines.push(`| FCS save count | ${formatNumber(mod.header.saveCount)} |`);
+    }
     lines.push(
       `| Dependencies | ${
         mod.header.dependencies.length === 0
@@ -2255,7 +1359,26 @@ const renderMods = (mods: readonly LoadedMod[]) => {
           : mod.header.references.map(escapeTableCell).join(", ")
       } |`,
     );
+    if (mod.header.mergeEntries.length > 0) {
+      lines.push(
+        `| Merged from | ${mod.header.mergeEntries.map((entry) => `${escapeTableCell(entry.key)} (${entry.version1}/${entry.version2})`).join(", ")} |`,
+      );
+    }
+    if (mod.header.deleteRequests.length > 0) {
+      lines.push(
+        `| Delete requests | ${mod.header.deleteRequests.map((entry) => `${escapeTableCell(entry.key)}: ${escapeTableCell(entry.items)}`).join("; ")} |`,
+      );
+    }
     lines.push("");
+
+    if (mod.warnings.length > 0) {
+      lines.push("**Parser warnings**");
+      lines.push("");
+      for (const warning of mod.warnings) {
+        lines.push(`- ${escapeTableCell(warning)}`);
+      }
+      lines.push("");
+    }
 
     if (mod.header.description.length > 0) {
       lines.push("**Description**");
@@ -2268,377 +1391,591 @@ const renderMods = (mods: readonly LoadedMod[]) => {
   return lines.join("\n");
 };
 
-const renderOtherFieldCounts = (counts: InspectorRecord["counts"]) => {
-  const parts: string[] = [];
-  const entries: Array<[string, number]> = [
-    ["bools", counts.bools],
-    ["floats", counts.floats],
-    ["ints", counts.ints],
-    ["vec3", counts.vector3s],
-    ["vec4", counts.vector4s],
-    ["files", counts.files],
-    ["refs", counts.references],
-    ["refCats", counts.referenceCategories],
-    ["instances", counts.instances],
-  ];
+// --- ダイアログ -------------------------------------------------------------------
 
-  for (const [label, count] of entries) {
-    if (count > 0) {
-      parts.push(`${label}=${formatNumber(count)}`);
-    }
-  }
-
-  if (parts.length === 0) {
-    return "";
-  }
-
-  return parts.join(", ");
+const speakerShortLabels: Readonly<Record<number, string>> = {
+  0: "ME",
+  1: "TARGET",
+  2: "TARGET_IF_PLAYER",
+  3: "INTERJECTOR1",
+  4: "INTERJECTOR2",
+  5: "INTERJECTOR3",
+  6: "WHOLE_SQUAD",
+  7: "TARGET_WITH_RACE",
 };
 
-const renderTypeDescriptor = (type: number) =>
-  `${type} · ${getItemTypeEnglishName(type)} · ${getItemTypeLabel(type)}`;
+const speakerScoreBonus: Readonly<Record<number, number>> = {
+  1: 1,
+  2: 1,
+  3: 2,
+  4: 2,
+  5: 2,
+  6: 2,
+  7: 1,
+};
 
-const renderStringBearingRecords = (
-  records: readonly InspectorRecord[],
-  lookupRecords: readonly InspectorRecord[] = records,
-) => {
-  const stringStats = summarizeStringRecords(records);
-  const stringRecords = records.filter((record) => record.strings.length > 0);
-  const recordById = buildRecordIndex(lookupRecords);
-  const lines: string[] = [];
-  lines.push("## String-bearing Records");
-  lines.push("");
-  lines.push(
-    "This section preserves original string keys while omitting empty values and records that contain only empty strings. For non-dialog records it also includes loaded references and useful primitive values so item, building, vendor, squad, and world records remain understandable when exported one mod at a time.",
-  );
-  lines.push("");
-  lines.push(
-    `Rendered: ${formatNumber(stringStats.renderedRecordCount)} records / ${formatNumber(stringStats.renderedFieldCount)} non-empty string fields`,
-  );
-  lines.push(
-    `Omitted: ${formatNumber(stringStats.omittedNoStringRecordCount)} records with no string fields`,
-  );
-  if (stringStats.emptyOnlyRecordCount > 0) {
-    lines.push(
-      `Omitted: ${formatNumber(stringStats.emptyOnlyRecordCount)} records whose string fields are all empty`,
-    );
-  }
-  if (stringStats.totalFieldCount > stringStats.renderedFieldCount) {
-    lines.push(
-      `Empty string fields omitted: ${formatNumber(stringStats.totalFieldCount - stringStats.renderedFieldCount)}`,
-    );
-  }
-  lines.push("");
+/** 1 件あれば +2 されるカテゴリ */
+const flatScoreCategories = [
+  "give item",
+  "has package",
+  "in town of",
+  "is character",
+  "my faction",
+  "my race",
+  "my subrace",
+  "target carrying character",
+  "target faction",
+  "target has item type",
+];
 
-  const byMod = new Map<string, InspectorRecord[]>();
-  for (const record of stringRecords) {
-    const modName = normalizeModName(record.modName);
-    const existing = byMod.get(modName);
-    if (existing) {
-      existing.push(record);
-    } else {
-      byMod.set(modName, [record]);
+/**
+ * ダイアログ / ダイアログ行の選択スコアを推定する (Steam ガイドで検証された式)。
+ * スコアの高い行から判定され、成立した行より低いスコアの行は判定されない。
+ */
+const estimateDialogScore = (ctx: RenderContext, record: InspectorRecord) => {
+  let score = getIntValue(record, "score bonus") ?? 0;
+  score += speakerScoreBonus[getIntValue(record, "speaker") ?? 0] ?? 0;
+  if (getBoolValue(record, "interjection")) {
+    score += 2;
+  }
+  if ((getFloatValue(record, "chance permanent") ?? 100) < 99) {
+    score += 1;
+  }
+  if (getBoolValue(record, "locked")) {
+    score += 2;
+  }
+  if ((getIntValue(record, "target is type") ?? 0) !== 0) {
+    score += 1;
+  }
+
+  for (const reference of getReferences(record, "conditions")) {
+    score += 1;
+    const action = ctx.effectiveById.get(reference.targetId);
+    const conditionName = getIntValue(action, "condition name");
+    if (
+      conditionName !== undefined &&
+      getDialogConditionKind(conditionName) === "tag" &&
+      reference.value0 === 1
+    ) {
+      score += 1;
     }
   }
 
-  for (const [modName, modRecords] of byMod) {
-    const modStats = summarizeStringRecords(modRecords);
-    if (modStats.renderedRecordCount === 0) {
+  for (const category of flatScoreCategories) {
+    if (getReferences(record, category).length > 0) {
+      score += 2;
+    }
+  }
+  score += 2 * getReferences(record, "target has item").length;
+  score += 2 * getReferences(record, "world state").length;
+  if (getReferences(record, "target race").length > 0) {
+    score += 4;
+  }
+  return score;
+};
+
+const getLabelName = (labels: Readonly<Record<number, string>>, value: number, fallback: string) =>
+  labels[value]?.replace(/^[A-Za-z]+\./, "") ?? `${fallback}(${value})`;
+
+const formatCondition = (ctx: RenderContext, reference: Reference) => {
+  if (isRemovedReference(reference)) {
+    return `\`${escapeTableCell(reference.targetId)}\` [removed by this mod]`;
+  }
+
+  const action = ctx.effectiveById.get(reference.targetId);
+  const conditionName = getIntValue(action, "condition name");
+  if (!action || conditionName === undefined) {
+    return `\`${escapeTableCell(reference.targetId)}\` · ${action ? "not a condition record" : "unresolved"} (value ${reference.value0})`;
+  }
+  ctx.renderedRecordUids.add(action.uid);
+
+  const name = getLabelName(dialogConditionLabels, conditionName, "DC");
+  const who = getIntValue(action, "who") ?? 0;
+  const subject = `${name}(${describeConditionSubject(who)})`;
+  const value = reference.value0;
+  const parts: string[] = [];
+
+  switch (getDialogConditionKind(conditionName)) {
+    case "always":
+      parts.push(`${name}: always true (not evaluated, only adds score)`);
+      break;
+    case "bool":
+      parts.push(`${subject} is ${value > 0 ? "true" : "false"}`);
+      break;
+    case "tag": {
+      const tag = getIntValue(action, "tag") ?? -1;
+      const enumName = getDialogConditionTagEnumName(conditionName) ?? "";
+      const tagLabel = getLabelName(getEnumLabels(ctx, enumName) ?? {}, tag, "tag");
+      parts.push(
+        value === 1
+          ? `${subject} has tag ${tagLabel} (allow list)`
+          : `${subject} does not have tag ${tagLabel} (deny list)`,
+      );
+      break;
+    }
+    case "int": {
+      const compareBy = getIntValue(action, "compare by") ?? 0;
+      if (isAtLeastCondition(conditionName) && compareBy !== 1) {
+        parts.push(`${subject} >= ${value}`);
+      } else {
+        parts.push(`${subject} ${compareBy === 1 ? "<" : compareBy === 2 ? ">" : "=="} ${value}`);
+      }
+      break;
+    }
+  }
+
+  const stringVar = getStringValue(action, "stringvar");
+  if (stringVar.length > 0) {
+    parts.push(`string "${escapeTableCell(stringVar)}"`);
+  }
+  if (action.removed) {
+    parts.push("[condition record removed]");
+  }
+  return parts.join(" · ");
+};
+
+const formatEffect = (ctx: RenderContext, reference: Reference) => {
+  if (isRemovedReference(reference)) {
+    return `\`${escapeTableCell(reference.targetId)}\` [removed by this mod]`;
+  }
+
+  const action = ctx.effectiveById.get(reference.targetId);
+  const actionName = getIntValue(action, "action name");
+  if (!action || actionName === undefined) {
+    return `\`${escapeTableCell(reference.targetId)}\` · ${action ? "not an effect record" : "unresolved"} (value ${reference.value0})`;
+  }
+  ctx.renderedRecordUids.add(action.uid);
+
+  const parts = [getLabelName(dialogActionLabels, actionName, "DA")];
+  const meaning = dialogEffectValueMeanings[actionName];
+  if (meaning) {
+    parts.push(`${reference.value0} (${meaning})`);
+  } else if (reference.value0 !== 0) {
+    parts.push(`value ${reference.value0}`);
+  }
+  const legacyValue = getIntValue(action, "action value");
+  if (legacyValue !== undefined && legacyValue !== 0) {
+    parts.push(`action value field ${legacyValue}`);
+  }
+  if (action.removed) {
+    parts.push("[effect record removed]");
+  }
+  return parts.join(" ");
+};
+
+const formatChangeSuffix = (change: ReferenceChange | undefined) => {
+  switch (change) {
+    case "added":
+      return " [added]";
+    case "changed":
+      return " [changed]";
+    case "removed":
+    case "removed-missing":
+      return " [removed]";
+    default:
+      return "";
+  }
+};
+
+const renderConditionsAndEffects = (
+  lines: string[],
+  ctx: RenderContext,
+  ownerType: number,
+  categories: readonly DisplayCategory[],
+  indent: string,
+) => {
+  for (const [categoryName, label, format] of [
+    ["conditions", "Conditions", formatCondition],
+    ["effects", "Effects", formatEffect],
+  ] as const) {
+    const category = categories.find((candidate) => candidate.name === categoryName);
+    if (!category || category.entries.length === 0) {
       continue;
     }
+    noteUsedField(ctx, ownerType, categoryName);
+    lines.push(`${indent}- ${label}:`);
+    for (const { change, reference } of category.entries) {
+      lines.push(`${indent}  - ${format(ctx, reference)}${formatChangeSuffix(change)}`);
+    }
+  }
+};
 
-    lines.push(`### String-bearing Records · ${modName}`);
-    lines.push("");
-    lines.push(
-      `${pluralSuffix("record", modStats.renderedRecordCount)} / ${pluralSuffix("field", modStats.renderedFieldCount)} shown from \`${modName}\`.`,
+const dialogSettingOrder = [
+  "speaker",
+  "monologue",
+  "for enemies",
+  "locked",
+  "one at a time",
+  "once only",
+  "interjection",
+  "chance permanent",
+  "chance temporary",
+  "repetition limit",
+  "score bonus",
+  "target is type",
+];
+
+/** 合成済みレコードのテキスト (text0, text1, ...)。変更レコードでもベースの他の候補が残る。 */
+const getDialogTexts = (record: InspectorRecord) =>
+  record.strings
+    .filter((entry) => entry.key.startsWith("text") && entry.value.length > 0)
+    .map((entry) => ({ original: entry.value, textId: entry.key }));
+
+const formatTextSnippet = (record: InspectorRecord) => {
+  const [first] = getDialogTexts(record);
+  if (!first) {
+    return "";
+  }
+  const flat = first.original.replace(/\s+/g, " ").trim();
+  return ` — "${escapeTableCell(flat.length > 100 ? `${flat.slice(0, 100)}…` : flat)}"`;
+};
+
+const renderLineTexts = (
+  lines: string[],
+  ctx: RenderContext,
+  record: InspectorRecord,
+  indent: string,
+) => {
+  const texts = getDialogTexts(record);
+  if (texts.length === 0) {
+    return;
+  }
+  for (const text of texts) {
+    noteWordSwapTokens(ctx, text.original);
+  }
+  if (texts.length === 1) {
+    const [text] = texts;
+    pushTextValue(
+      lines,
+      indent,
+      text!.textId === "text0" ? "Text" : `Text \`${text!.textId}\``,
+      text!.original,
     );
-    if (modStats.emptyOnlyRecordCount > 0) {
+    return;
+  }
+  lines.push(`${indent}- Text variants (one is chosen at random): ${formatNumber(texts.length)}`);
+  for (const text of texts) {
+    pushTextValue(lines, `${indent}  `, `\`${text.textId}\``, text.original);
+  }
+};
+
+interface LineNodeOptions {
+  change?: ReferenceChange;
+  /** false なら 1 行の要約だけを出す (この mod が手を加えていない既存の行) */
+  expand?: boolean;
+}
+
+const renderDialogueLineNode = (
+  lines: string[],
+  ctx: RenderContext,
+  reference: Reference,
+  location: string,
+  depth: number,
+  options: LineNodeOptions = {},
+) => {
+  const indent = "  ".repeat(depth);
+  const changeSuffix = formatChangeSuffix(options.change);
+  if (isRemovedReference(reference)) {
+    lines.push(
+      `${indent}- Line \`${escapeTableCell(reference.targetId)}\`${changeSuffix.length > 0 ? changeSuffix : " [removed]"}`,
+    );
+    return;
+  }
+
+  const lineRecord = ctx.effectiveById.get(reference.targetId);
+  if (!lineRecord) {
+    lines.push(
+      `${indent}- Missing line reference: \`${escapeTableCell(reference.targetId)}\`${changeSuffix}`,
+    );
+    return;
+  }
+
+  const lineId = lineRecord.stringId;
+  const speaker = speakerShortLabels[getIntValue(lineRecord, "speaker") ?? 0] ?? "?";
+  const role = getBoolValue(lineRecord, "interjection") ? "INTERJECTION NODE" : speaker;
+  const heading = renderInspectorHeading(lineRecord);
+  const namePart = heading === lineId ? "" : ` "${escapeTableCell(heading)}"`;
+  const linkPart = reference.value0 !== 0 ? ` · link value ${reference.value0}` : "";
+  const label = `${indent}- [${role}] Line \`${escapeTableCell(lineId)}\`${namePart}`;
+
+  if (options.change === "removed" || options.change === "removed-missing") {
+    lines.push(`${label}${changeSuffix}${formatTextSnippet(lineRecord)}`);
+    return;
+  }
+
+  const previous = ctx.renderedLineLocations.get(lineId);
+  if (previous !== undefined) {
+    lines.push(
+      `${label}${linkPart}${changeSuffix} ↪ shown above${previous === location ? "" : ` (in ${previous})`}`,
+    );
+    return;
+  }
+
+  const targetRecord = ctx.targetById.get(lineId);
+  if (options.expand === false && !targetRecord) {
+    lines.push(`${label}${linkPart} · unchanged base line${formatTextSnippet(lineRecord)}`);
+    return;
+  }
+
+  ctx.renderedLineLocations.set(lineId, location);
+  if (targetRecord) {
+    ctx.renderedRecordUids.add(targetRecord.uid);
+  }
+  const status = !targetRecord
+    ? " · from reference context"
+    : targetRecord.saveData.changeTypeName !== "New" || targetRecord.removed
+      ? ` · ${getRecordStatus(targetRecord)} by this mod`
+      : "";
+  lines.push(
+    `${label} · score≈${estimateDialogScore(ctx, lineRecord)}${linkPart}${status}${changeSuffix}`,
+  );
+
+  const childIndent = `${indent}  `;
+  if (lineRecord.removed) {
+    lines.push(`${childIndent}- Removed by this mod (the line no longer exists in game).`);
+    return;
+  }
+
+  renderLineTexts(lines, ctx, lineRecord, childIndent);
+  const settings = formatRecordValues(ctx, lineRecord, {
+    omitKeys: new Set(["speaker", "interjection", "owner"]),
+    preferredOrder: dialogSettingOrder,
+  });
+  if (settings.text.length > 0) {
+    lines.push(`${childIndent}- Settings: ${settings.text}`);
+  }
+
+  const base = targetRecord ? getComparisonBase(ctx, targetRecord) : undefined;
+  const categories = getEffectiveCategories(lineRecord, targetRecord, base);
+  renderConditionsAndEffects(lines, ctx, lineRecord.type, categories, childIndent);
+  renderReferenceCategories(lines, ctx, lineRecord.type, categories, {
+    base,
+    indent: childIndent,
+    omit: new Set(["conditions", "effects", "lines"]),
+  });
+
+  const children = categories.find((category) => category.name === "lines")?.entries ?? [];
+  if (children.length === 0) {
+    return;
+  }
+  noteUsedField(ctx, lineRecord.type, "lines");
+  if (!targetRecord) {
+    // 参照コンテキストの行は、この mod の会話から入る先として本文だけを示し、続きは展開しない
+    lines.push(
+      `${childIndent}- Replies / next lines: ${formatNumber(children.length)} in the base dialogue (not expanded)`,
+    );
+    return;
+  }
+  if (depth >= maxDialogLineRenderDepth) {
+    lines.push(
+      `${childIndent}- Replies: depth limit reached (${pluralSuffix("line", children.length)} not expanded).`,
+    );
+    return;
+  }
+  lines.push(`${childIndent}- Replies / next lines: ${formatNumber(children.length)}`);
+  for (const { change, reference: childReference } of children) {
+    // 既存の行を編集している場合、手を加えていない返答は要約だけにする
+    renderDialogueLineNode(lines, ctx, childReference, location, depth + 2, {
+      change,
+      expand: !base || change !== null,
+    });
+  }
+};
+
+const renderDialogueRecord = (lines: string[], ctx: RenderContext, record: InspectorRecord) => {
+  ctx.renderedRecordUids.add(record.uid);
+  const effective = ctx.effectiveById.get(record.stringId) ?? record;
+  const base = getComparisonBase(ctx, record);
+  const heading = renderInspectorHeading(record);
+  const location = `dialogue "${heading}"`;
+
+  lines.push(`###### ${escapeTableCell(heading)}`);
+  lines.push("");
+  const metaParts = [
+    `ID: \`${escapeTableCell(record.stringId)}\``,
+    ...getRecordLineageParts(ctx, record),
+    `score≈${estimateDialogScore(ctx, effective)}`,
+  ];
+  lines.push(`- ${metaParts.join(" · ")}`);
+  if (isUnfinishedDialog(effective)) {
+    lines.push('- Disabled in game: the name contains "Unfinished".');
+  }
+  if (record.removed) {
+    lines.push("- Removed by this mod.");
+    lines.push("");
+    return;
+  }
+
+  const tag = getStringValue(effective, "tag");
+  if (tag.length > 0) {
+    lines.push(`- Tag: ${escapeTableCell(tag)}`);
+  }
+  const settings = formatRecordValues(ctx, effective, {
+    omitKeys: new Set(["owner"]),
+    preferredOrder: dialogSettingOrder,
+  });
+  if (settings.text.length > 0) {
+    lines.push(`- Settings: ${settings.text}`);
+  }
+  if (base) {
+    lines.push(
+      "- This mod edits an existing dialogue: entries tagged [added] / [changed] / [removed] are its edits; untagged lines come from the base dialogue and are only summarised.",
+    );
+  }
+
+  const categories = getEffectiveCategories(effective, record, base);
+  renderConditionsAndEffects(lines, ctx, record.type, categories, "");
+  renderReferenceCategories(lines, ctx, record.type, categories, {
+    base,
+    omit: new Set(["conditions", "effects", "lines"]),
+  });
+
+  const rootLines = categories.find((category) => category.name === "lines")?.entries ?? [];
+  if (rootLines.length === 0) {
+    lines.push("- Lines: none");
+    lines.push("");
+    return;
+  }
+
+  noteUsedField(ctx, record.type, "lines");
+  lines.push(`- Root lines: ${formatNumber(rootLines.length)}`);
+  for (const { change, reference } of rootLines) {
+    renderDialogueLineNode(lines, ctx, reference, location, 1, {
+      change,
+      expand: !base || change !== null,
+    });
+  }
+  lines.push("");
+};
+
+const renderDialoguePackage = (lines: string[], ctx: RenderContext, record: InspectorRecord) => {
+  ctx.renderedRecordUids.add(record.uid);
+  const heading = renderInspectorHeading(record);
+  const base = getComparisonBase(ctx, record);
+  const effective = ctx.effectiveById.get(record.stringId) ?? record;
+
+  lines.push(
+    `- ${escapeTableCell(heading)} · \`${escapeTableCell(record.stringId)}\` · ${getRecordLineageParts(ctx, record).join(" · ")}`,
+  );
+  if (isUnfinishedDialog(record)) {
+    lines.push('  - Disabled in game: the name contains "Unfinished".');
+  }
+  if (record.removed) {
+    lines.push("  - Removed by this mod.");
+    return;
+  }
+  const tag = getStringValue(effective, "tag");
+  if (tag.length > 0) {
+    lines.push(`  - Tag: ${escapeTableCell(tag)}`);
+  }
+
+  const inherited = getReferences(effective, "inheritsFrom");
+  if (inherited.length > 0) {
+    noteUsedField(ctx, record.type, "inheritsFrom");
+    lines.push(
+      `  - Inherits from (dialogs of these packages are added recursively): ${inherited.map((reference) => formatResolvedTarget(ctx, reference.targetId)).join("; ")}`,
+    );
+  }
+
+  const dialogs = mergeDisplayReferences(record, base, "dialogs");
+  if (dialogs.length === 0) {
+    return;
+  }
+  noteUsedField(ctx, record.type, "dialogs");
+  const byEvent = new Map<number, typeof dialogs>();
+  for (const entry of dialogs) {
+    const list = byEvent.get(entry.reference.value0) ?? [];
+    list.push(entry);
+    byEvent.set(entry.reference.value0, list);
+  }
+  lines.push(
+    `  - Dialogs: ${formatNumber(dialogs.length)}${base ? " (entries tagged [added] / [changed] / [removed] are this mod's edits)" : ""}`,
+  );
+  for (const [event, entries] of [...byEvent.entries()].sort((left, right) => left[0] - right[0])) {
+    lines.push(`    - ${formatEventTriggerName(event)}:`);
+    for (const { change, reference } of entries) {
       lines.push(
-        `${pluralSuffix("record", modStats.emptyOnlyRecordCount)} with only empty strings omitted.`,
+        `      - ${formatResolvedTarget(ctx, reference.targetId)}${formatChangeSuffix(change)}`,
       );
     }
-    lines.push("");
-
-    for (const record of modRecords) {
-      const visibleStrings = getVisibleStringEntries(record);
-      if (visibleStrings.length === 0) {
-        continue;
-      }
-
-      const heading = renderInspectorHeading(record);
-      const metaParts: string[] = [];
-      const otherFieldCounts = renderOtherFieldCounts(record.counts);
-      const omittedEmptyCount = record.strings.length - visibleStrings.length;
-
-      if (heading !== record.stringId) {
-        metaParts.push(`ID: \`${escapeTableCell(record.stringId)}\``);
-      }
-
-      metaParts.push(`Type: ${renderTypeDescriptor(record.type)}`);
-      metaParts.push(...getRecordLineageParts(record));
-
-      if (otherFieldCounts.length > 0) {
-        metaParts.push(`Other fields: ${otherFieldCounts}`);
-      }
-
-      if (omittedEmptyCount > 0) {
-        metaParts.push(`${formatNumber(omittedEmptyCount)} empty omitted`);
-      }
-
-      lines.push(`#### ${escapeTableCell(heading)}`);
-      lines.push("");
-      lines.push(`- ${metaParts.join(" · ")}`);
-      lines.push("");
-      for (const entry of visibleStrings) {
-        lines.push(`- \`${escapeTableCell(entry.key)}\``);
-        lines.push("");
-        lines.push(formatMultiline(entry.value));
-        lines.push("");
-      }
-
-      renderNonDialogRecordSupplement(lines, record, recordById);
-    }
   }
-
-  return lines.join("\n");
 };
 
-const getReferenceOnlyRecords = (records: readonly InspectorRecord[]) =>
-  records.filter(
-    (record) =>
-      !isDialogRelevantRecord(record) &&
-      hasReferenceDetails(record) &&
-      getVisibleStringEntries(record).length === 0,
-  );
-
-const renderReferenceBearingRecords = (
-  records: readonly InspectorRecord[],
-  lookupRecords: readonly InspectorRecord[] = records,
-) => {
-  const referenceOnlyRecords = getReferenceOnlyRecords(records);
-  if (referenceOnlyRecords.length === 0) {
-    return "";
-  }
-
-  const recordById = buildRecordIndex(lookupRecords);
-  const byMod = new Map<string, InspectorRecord[]>();
-  for (const record of referenceOnlyRecords) {
-    const modName = normalizeModName(record.modName);
-    const existing = byMod.get(modName);
-    if (existing) {
-      existing.push(record);
-    } else {
-      byMod.set(modName, [record]);
-    }
-  }
-
-  const totalReferences = referenceOnlyRecords.reduce(
-    (sum, record) => sum + record.counts.references,
-    0,
-  );
-  const lines: string[] = [];
-
-  lines.push("## Reference-bearing Records Without Visible Strings");
-  lines.push("");
+const renderWordSwap = (lines: string[], ctx: RenderContext, record: InspectorRecord) => {
+  ctx.renderedRecordUids.add(record.uid);
+  const effective = ctx.effectiveById.get(record.stringId) ?? record;
+  const location = `word swap /${record.name}/`;
   lines.push(
-    "These non-dialog records have no non-empty string fields, but their references define concrete mod behavior. This section is important for single-mod exports because it preserves relationships such as vendor inventory, squad members, building parts, crafting inputs/outputs, biome links, and faction/world-state wiring.",
+    `- /${escapeTableCell(record.name)}/ · \`${escapeTableCell(record.stringId)}\` · ${getRecordLineageParts(ctx, record).join(" · ")}`,
   );
-  lines.push("");
-  lines.push(
-    `Rendered: ${pluralSuffix("record", referenceOnlyRecords.length)} / ${pluralSuffix("reference", totalReferences)}`,
-  );
-  lines.push("");
-
-  for (const [modName, modRecords] of byMod) {
-    const modReferenceCount = modRecords.reduce((sum, record) => sum + record.counts.references, 0);
-
-    lines.push(`### Reference-bearing Records · ${escapeTableCell(modName)}`);
-    lines.push("");
-    lines.push(
-      `${pluralSuffix("record", modRecords.length)} / ${pluralSuffix("reference", modReferenceCount)} shown from \`${modName}\`.`,
-    );
-    lines.push("");
-
-    for (const record of modRecords) {
-      const heading = renderInspectorHeading(record);
-      const metaParts: string[] = [];
-      const otherFieldCounts = renderOtherFieldCounts(record.counts);
-
-      if (heading !== record.stringId) {
-        metaParts.push(`ID: \`${escapeTableCell(record.stringId)}\``);
-      }
-
-      metaParts.push(`Type: ${renderTypeDescriptor(record.type)}`);
-      metaParts.push(...getRecordLineageParts(record));
-
-      if (otherFieldCounts.length > 0) {
-        metaParts.push(`Other fields: ${otherFieldCounts}`);
-      }
-
-      lines.push(`#### ${escapeTableCell(heading)}`);
-      lines.push("");
-      lines.push(`- ${metaParts.join(" · ")}`);
-      lines.push("");
-      renderNonDialogRecordSupplement(lines, record, recordById);
-    }
+  if (record.removed) {
+    lines.push("  - Removed by this mod.");
+    return;
   }
-
-  return lines.join("\n");
+  const settings = formatRecordValues(ctx, effective, { omitKeys: new Set(["owner"]) });
+  if (settings.text.length > 0) {
+    lines.push(`  - Settings: ${settings.text}`);
+  }
+  const base = getComparisonBase(ctx, record);
+  const categories = getEffectiveCategories(effective, record, base);
+  renderConditionsAndEffects(lines, ctx, record.type, categories, "  ");
+  const alternatives = categories.find((category) => category.name === "lines")?.entries ?? [];
+  lines.push(`  - Alternatives: ${formatNumber(alternatives.length)}`);
+  for (const { change, reference } of alternatives) {
+    renderDialogueLineNode(lines, ctx, reference, location, 2, {
+      change,
+      expand: !base || change !== null,
+    });
+  }
 };
 
-const groupTextRecordsByMod = <T extends DialogRecord | EntityRecord>(records: readonly T[]) => {
-  const groups = new Map<string, T[]>();
-
-  for (const record of records) {
-    const modName = normalizeModName(record.modName);
-    const existing = groups.get(modName);
-    if (existing) {
-      existing.push(record);
-    } else {
-      groups.set(modName, [record]);
-    }
-  }
-
-  return groups;
-};
-
-const isGenericDialogTitle = (value: string) =>
-  /^DIALOGUE_LINE(?:\d+)?$/i.test(value) || value === "DIALOGUE_LINE";
-
-type HeadingRecord = Pick<InspectorRecord, "name" | "stringId" | "type">;
-
-const renderBaseRecordHeading = (record: HeadingRecord) => {
-  const trimmedName = record.name.trim();
-
-  if (record.type === 19 && (trimmedName.length === 0 || isGenericDialogTitle(trimmedName))) {
-    return record.stringId;
-  }
-
-  if (trimmedName.length > 0) {
-    return trimmedName;
-  }
-
-  if (record.stringId.length > 0) {
-    return record.stringId;
-  }
-
-  return "(unnamed)";
-};
-
-const renderDialogHeading = (record: DialogRecord) => {
-  const heading = renderBaseRecordHeading(record);
-  if (heading === record.stringId) {
-    return record.stringId;
-  }
-
-  return `${heading} · ${record.stringId}`;
-};
-
-const renderEntityHeading = (record: EntityRecord) => renderBaseRecordHeading(record);
-
-const renderInspectorHeading = (record: InspectorRecord) => renderBaseRecordHeading(record);
-
-const groupInspectorRecordsByMod = (records: readonly InspectorRecord[]) => {
-  const groups = new Map<string, InspectorRecord[]>();
-
-  for (const record of records) {
-    const modName = normalizeModName(record.modName);
-    const existing = groups.get(modName);
-    if (existing) {
-      existing.push(record);
-    } else {
-      groups.set(modName, [record]);
-    }
-  }
-
-  return groups;
-};
-
-const collectReferencedDialogLineIds = (records: readonly InspectorRecord[]) => {
-  const referencedIds = new Set<string>();
-
-  for (const record of records) {
-    if (record.type !== dialogueTypeCode && record.type !== dialogueLineTypeCode) {
-      continue;
-    }
-
-    for (const reference of getReferences(record, "lines")) {
-      referencedIds.add(reference.targetId);
-    }
-  }
-
-  return referencedIds;
-};
-
-const renderDialogEventBreakdown = (references: readonly Reference[]) => {
-  const counts = new Map<number, number>();
-  for (const reference of references) {
-    counts.set(reference.value0, (counts.get(reference.value0) ?? 0) + 1);
-  }
-
-  return Array.from(counts.entries())
-    .sort((left, right) => right[1] - left[1] || left[0] - right[0])
-    .map(
-      ([eventValue, count]) =>
-        `${formatEventTriggerValue(eventValue)}: ${pluralSuffix("dialog", count)}`,
-    )
-    .join(" · ");
-};
-
-const countDialogPackageEvents = (records: readonly InspectorRecord[]) => {
-  const counts = new Map<number, { dialogReferences: number; packageIds: Set<string> }>();
-
+const renderDialogMechanicsSummary = (ctx: RenderContext, records: readonly InspectorRecord[]) => {
+  const eventCounts = new Map<number, { packages: Set<string>; references: number }>();
   for (const record of records) {
     if (record.type !== dialoguePackageTypeCode) {
       continue;
     }
-
     for (const reference of getReferences(record, "dialogs")) {
-      const existing = counts.get(reference.value0) ?? {
-        dialogReferences: 0,
-        packageIds: new Set<string>(),
+      if (isRemovedReference(reference)) {
+        continue;
+      }
+      const entry = eventCounts.get(reference.value0) ?? {
+        packages: new Set<string>(),
+        references: 0,
       };
-      existing.dialogReferences += 1;
-      existing.packageIds.add(record.stringId);
-      counts.set(reference.value0, existing);
+      entry.references += 1;
+      entry.packages.add(record.stringId);
+      eventCounts.set(reference.value0, entry);
     }
   }
 
-  return Array.from(counts.entries()).sort(
-    (left, right) => right[1].dialogReferences - left[1].dialogReferences || left[0] - right[0],
+  const speakerCounts = countBy(
+    records.filter(
+      (record) =>
+        record.type === dialogueLineTypeCode && getIntValue(record, "speaker") !== undefined,
+    ),
+    (record) => getIntValue(record, "speaker")!,
   );
-};
-
-const countDialogLineIntegerField = (records: readonly InspectorRecord[], key: string) => {
-  const counts = new Map<number, number>();
-  for (const record of records) {
-    if (record.type !== dialogueLineTypeCode) {
-      continue;
-    }
-
-    const value = getIntValue(record, key);
-    if (value !== undefined) {
-      counts.set(value, (counts.get(value) ?? 0) + 1);
-    }
-  }
-
-  return Array.from(counts.entries()).sort((left, right) => right[1] - left[1]);
-};
-
-const renderDialogMechanicsSummary = (records: readonly InspectorRecord[]) => {
-  const eventCounts = countDialogPackageEvents(records);
-  const speakerCounts = countDialogLineIntegerField(records, "speaker");
-  const repetitionCounts = countDialogLineIntegerField(records, "repetition limit");
+  const repetitionCounts = countBy(
+    records.filter(
+      (record) =>
+        record.type === dialogueLineTypeCode &&
+        getIntValue(record, "repetition limit") !== undefined,
+    ),
+    (record) => getIntValue(record, "repetition limit")!,
+  );
   const lines: string[] = [];
 
-  if (eventCounts.length > 0) {
+  if (eventCounts.size > 0) {
     lines.push("#### Event Trigger Breakdown");
     lines.push("");
-    lines.push("| FCS event | Package refs | Packages |");
+    lines.push("| Event | Package refs | Packages |");
     lines.push("| --- | ---: | ---: |");
-    for (const [eventValue, count] of eventCounts) {
+    for (const [eventValue, count] of [...eventCounts.entries()].sort(
+      (left, right) => right[1].references - left[1].references || left[0] - right[0],
+    )) {
       lines.push(
-        `| ${escapeTableCell(formatEventTriggerValue(eventValue))} | ${formatNumber(count.dialogReferences)} | ${formatNumber(count.packageIds.size)} |`,
+        `| ${escapeTableCell(formatEventTriggerValue(eventValue))} | ${formatNumber(count.references)} | ${formatNumber(count.packages.size)} |`,
       );
     }
     lines.push("");
@@ -2651,7 +1988,7 @@ const renderDialogMechanicsSummary = (records: readonly InspectorRecord[]) => {
     lines.push("| --- | ---: |");
     for (const [speaker, count] of speakerCounts) {
       lines.push(
-        `| ${escapeTableCell(formatIntegerValue("speaker", speaker, dialogueLineTypeCode))} | ${formatNumber(count)} |`,
+        `| ${escapeTableCell(`${speaker} (${talkerLabels[speaker] ?? "?"})`)} | ${formatNumber(count)} |`,
       );
     }
     lines.push("");
@@ -2664,7 +2001,7 @@ const renderDialogMechanicsSummary = (records: readonly InspectorRecord[]) => {
     lines.push("| --- | ---: |");
     for (const [limit, count] of repetitionCounts) {
       lines.push(
-        `| ${escapeTableCell(formatIntegerValue("repetition limit", limit, dialogueLineTypeCode))} | ${formatNumber(count)} |`,
+        `| ${escapeTableCell(formatIntegerValue(ctx, "repetition limit", limit, dialogueLineTypeCode))} | ${formatNumber(count)} |`,
       );
     }
     lines.push("");
@@ -2673,233 +2010,110 @@ const renderDialogMechanicsSummary = (records: readonly InspectorRecord[]) => {
   return lines.join("\n");
 };
 
-const renderLineTexts = (lines: string[], dialogText: DialogRecord | undefined, indent: string) => {
-  const visibleTexts = dialogText ? getVisibleDialogTexts(dialogText) : [];
-
-  if (visibleTexts.length === 0) {
-    lines.push(`${indent}- Text: (no non-empty text variants)`);
-    return;
+/** 親 (lines 参照元) の索引。対象 mod の行がどの既存ダイアログから使われているかを示すために使う。 */
+const buildLineParentIndex = (ctx: RenderContext, wanted: ReadonlySet<string>) => {
+  const parents = new Map<string, InspectorRecord[]>();
+  if (wanted.size === 0) {
+    return parents;
   }
-
-  if (visibleTexts.length === 1) {
-    const [text] = visibleTexts;
-    const label = text.textId === "text0" ? "Text" : `Text \`${text.textId}\``;
-    lines.push(`${indent}- ${label}:`);
-    pushIndentedBlock(lines, `${indent}  `, formatMultiline(text.original));
-    return;
+  for (const record of ctx.effectiveById.values()) {
+    if (
+      record.type !== dialogueTypeCode &&
+      record.type !== dialogueLineTypeCode &&
+      record.type !== wordSwapsTypeCode
+    ) {
+      continue;
+    }
+    for (const reference of getReferences(record, "lines")) {
+      if (!wanted.has(reference.targetId)) {
+        continue;
+      }
+      const list = parents.get(reference.targetId) ?? [];
+      if (list.length < 5) {
+        list.push(record);
+      }
+      parents.set(reference.targetId, list);
+    }
   }
-
-  lines.push(`${indent}- Text variants: ${formatNumber(visibleTexts.length)}`);
-  for (const text of visibleTexts) {
-    lines.push(`${indent}  - \`${escapeTableCell(text.textId)}\``);
-    pushIndentedBlock(lines, `${indent}    `, formatMultiline(text.original));
-  }
+  return parents;
 };
 
-const renderDialogueLineNode = (
-  lines: string[],
-  reference: Reference,
-  recordById: ReadonlyMap<string, InspectorRecord>,
-  dialogTextById: ReadonlyMap<string, DialogRecord>,
-  visitedLineIds: ReadonlySet<string>,
-  depth: number,
-) => {
-  const indent = "  ".repeat(depth);
-  const lineRecord = recordById.get(reference.targetId);
-  const dialogText = dialogTextById.get(reference.targetId);
-
-  if (!lineRecord) {
-    lines.push(
-      `${indent}- Missing line reference: \`${escapeTableCell(reference.targetId)}\` (${formatReferenceValues(reference)})`,
-    );
-    return;
-  }
-
-  const heading = renderInspectorHeading(lineRecord);
-  const idPart =
-    heading === lineRecord.stringId ? "" : ` · \`${escapeTableCell(lineRecord.stringId)}\``;
-
-  lines.push(
-    `${indent}- Line: ${escapeTableCell(heading)}${idPart} (${formatReferenceValues(reference)})`,
-  );
-
-  const lineFields = formatPrimitiveFields(lineRecord, [
-    "speaker",
-    "chance permanent",
-    "chance temporary",
-    "repetition limit",
-    "score bonus",
-    "target is type",
-    "interjection",
-  ]);
-  if (lineFields.length > 0) {
-    lines.push(`${indent}  - Fields: ${lineFields}`);
-  }
-
-  lines.push(`${indent}  - Lineage: ${getRecordLineageParts(lineRecord).join(" · ")}`);
-
-  renderLineTexts(lines, dialogText, `${indent}  `);
-
-  renderDialogActionReferences(
-    lines,
-    "Conditions",
-    getReferences(lineRecord, "conditions"),
-    recordById,
-    "conditions",
-    `${indent}  `,
-  );
-  renderDialogActionReferences(
-    lines,
-    "Effects",
-    getReferences(lineRecord, "effects"),
-    recordById,
-    "effects",
-    `${indent}  `,
-  );
-
-  renderGenericReferenceCategories(
-    lines,
-    lineRecord,
-    recordById,
-    ["conditions", "effects", "lines"],
-    `${indent}  `,
-  );
-
-  const childLineReferences = getReferences(lineRecord, "lines");
-  if (childLineReferences.length === 0) {
-    return;
-  }
-
-  if (visitedLineIds.has(lineRecord.stringId)) {
-    lines.push(`${indent}  - Replies: cycle detected; nested lines omitted.`);
-    return;
-  }
-
-  if (depth >= maxDialogLineRenderDepth) {
-    lines.push(`${indent}  - Replies: depth limit reached.`);
-    return;
-  }
-
-  const nextVisited = new Set(visitedLineIds);
-  nextVisited.add(lineRecord.stringId);
-
-  lines.push(`${indent}  - Replies: ${pluralSuffix("line", childLineReferences.length)}`);
-  for (const childReference of childLineReferences) {
-    renderDialogueLineNode(
-      lines,
-      childReference,
-      recordById,
-      dialogTextById,
-      nextVisited,
-      depth + 2,
-    );
-  }
-};
-
-const renderDialogueRecord = (
-  lines: string[],
-  record: InspectorRecord,
-  recordById: ReadonlyMap<string, InspectorRecord>,
-  dialogTextById: ReadonlyMap<string, DialogRecord>,
-) => {
-  const heading = renderInspectorHeading(record);
-  const lineReferences = getReferences(record, "lines");
-  const tag = getStringValue(record, "tag");
-  const fields = formatPrimitiveFields(record, [
-    "monologue",
-    "for enemies",
-    "locked",
-    "one at a time",
-    "chance permanent",
-    "chance temporary",
-    "repetition limit",
-    "score bonus",
-    "target is type",
-  ]);
-
-  lines.push(`##### ${escapeTableCell(heading)}`);
-  lines.push("");
-  lines.push(`- ID: \`${escapeTableCell(record.stringId)}\``);
-  lines.push(`- Type: ${renderTypeDescriptor(record.type)}`);
-  lines.push(`- Lineage: ${getRecordLineageParts(record).join(" · ")}`);
-
-  if (tag.length > 0) {
-    lines.push(`- Tag: ${escapeTableCell(tag)}`);
-  }
-
-  if (fields.length > 0) {
-    lines.push(`- Fields: ${fields}`);
-  }
-
-  renderDialogActionReferences(
-    lines,
-    "Conditions",
-    getReferences(record, "conditions"),
-    recordById,
-    "conditions",
-  );
-  renderGenericReferenceCategories(lines, record, recordById, ["conditions", "lines"]);
-
-  if (lineReferences.length === 0) {
-    lines.push("- Lines: none");
-    lines.push("");
-    return;
-  }
-
-  lines.push(`- Root lines: ${pluralSuffix("line", lineReferences.length)}`);
-  lines.push("");
-  for (const reference of lineReferences) {
-    renderDialogueLineNode(lines, reference, recordById, dialogTextById, new Set<string>(), 0);
-  }
-  lines.push("");
-};
-
-const renderStandaloneDialogLine = (
-  lines: string[],
-  record: InspectorRecord,
-  recordById: ReadonlyMap<string, InspectorRecord>,
-  dialogTextById: ReadonlyMap<string, DialogRecord>,
-) => {
-  const reference: Reference = {
-    targetId: record.stringId,
-    value0: 0,
-    value1: 0,
-    value2: 0,
-  };
-  renderDialogueLineNode(lines, reference, recordById, dialogTextById, new Set<string>(), 0);
-};
-
-const renderDialogStructures = (project: ModProject, dialogRecords: readonly DialogRecord[]) => {
-  const dialogRelevantRecords = getDialogRelevantRecords(project.inspectorRecords);
-  if (dialogRelevantRecords.length === 0) {
+const renderWordSwapTokenSummary = (ctx: RenderContext) => {
+  if (ctx.wordSwapTokens.size === 0) {
     return "";
   }
 
-  const lookupRecords = getLookupInspectorRecords(project);
-  const recordById = buildRecordIndex(lookupRecords);
-  const dialogTextById = new Map<string, DialogRecord>();
-  for (const record of getLookupDialogRecords(project, dialogRecords)) {
-    dialogTextById.set(record.stringId, record);
+  const swapsByName = new Map<string, InspectorRecord>();
+  for (const record of ctx.effectiveById.values()) {
+    if (record.type === wordSwapsTypeCode && !record.removed) {
+      swapsByName.set(record.name, record);
+    }
   }
 
-  const referencedLineIds = collectReferencedDialogLineIds(lookupRecords);
-  const byMod = groupInspectorRecordsByMod(dialogRelevantRecords);
+  const lines: string[] = [];
+  lines.push("#### Word Swap Tokens Used");
+  lines.push("");
+  lines.push(
+    "`/TOKEN/` in dialogue text is replaced in game by one of the alternatives of the WORD_SWAPS record with that name (alternatives can have their own conditions). Engine tokens are filled in by the game itself.",
+  );
+  lines.push("");
+  for (const [token, count] of [...ctx.wordSwapTokens.entries()].sort(
+    (left, right) => right[1] - left[1] || left[0].localeCompare(right[0]),
+  )) {
+    const engine = engineWordSwapTokens[token];
+    if (engine) {
+      lines.push(`- /${token}/ (${pluralSuffix("use", count)}): engine token → ${engine}`);
+      continue;
+    }
+    const swap = swapsByName.get(token);
+    if (!swap) {
+      lines.push(
+        `- /${token}/ (${pluralSuffix("use", count)}): no WORD_SWAPS record with this name is loaded`,
+      );
+      continue;
+    }
+    const samples = getReferences(swap, "lines")
+      .flatMap((reference) => {
+        const line = ctx.effectiveById.get(reference.targetId);
+        return line ? getDialogTexts(line).map((text) => text.original) : [];
+      })
+      .filter((text) => text.length > 0);
+    const uniqueSamples = uniquePreserveOrder(samples);
+    const shown = uniqueSamples
+      .slice(0, 8)
+      .map((text) => `"${escapeTableCell(text)}"`)
+      .join(", ");
+    const more = uniqueSamples.length > 8 ? ` … (+${uniqueSamples.length - 8})` : "";
+    lines.push(
+      `- /${token}/ (${pluralSuffix("use", count)}): \`${escapeTableCell(swap.stringId)}\` from ${escapeTableCell(normalizeModName(swap.modName))} → ${shown.length > 0 ? `${shown}${more}` : "(no text alternatives loaded)"}`,
+    );
+  }
+  lines.push("");
+  return lines.join("\n");
+};
+
+const renderDialogStructures = (ctx: RenderContext) => {
+  const dialogRecords = ctx.project.inspectorRecords.filter(isDialogRelevantRecord);
+  if (dialogRecords.length === 0) {
+    return "";
+  }
+
+  const byMod = groupByMod(dialogRecords);
   const lines: string[] = [];
 
   lines.push("### Dialog Structures");
   lines.push("");
   lines.push(
-    "FCS dialog model used here: `DIALOGUE_PACKAGE.dialogs` points to dialogue roots; `DIALOGUE.lines` and `DIALOGUE_LINE.lines` point to spoken lines and replies; `conditions` and `effects` point to `DIALOG_ACTION` records. Reference values are preserved as `v0/v1/v2`, with known FCS enum labels added where the source field is understood.",
+    "FCS dialog model: `DIALOGUE_PACKAGE.dialogs` lists dialogues per event trigger; `DIALOGUE.lines` are the opening lines; `DIALOGUE_LINE.lines` are replies / next lines; `conditions` and `effects` point to `DIALOG_ACTION` records. Lines tagged `[TARGET]` are the player's choices in a player conversation. `(speaker)` / `(target)` after a condition tells whose state is checked. Effects apply to the speaker, except in `EV_PLAYER_TALK_TO_ME` where they apply to the NPC being talked to.",
   );
   lines.push("");
 
-  const mechanicsSummary = renderDialogMechanicsSummary(dialogRelevantRecords);
+  const mechanicsSummary = renderDialogMechanicsSummary(ctx, dialogRecords);
   if (mechanicsSummary.length > 0) {
     lines.push(mechanicsSummary);
-    lines.push("");
   }
 
-  for (const mod of project.mods) {
+  for (const mod of getTargetMods(ctx.project)) {
     const modName = normalizeModName(mod.fileName);
     const modRecords = byMod.get(modName) ?? [];
     if (modRecords.length === 0) {
@@ -2908,18 +2122,12 @@ const renderDialogStructures = (project: ModProject, dialogRecords: readonly Dia
 
     const packages = modRecords.filter((record) => record.type === dialoguePackageTypeCode);
     const dialogues = modRecords.filter((record) => record.type === dialogueTypeCode);
-    const standaloneLines = modRecords.filter(
-      (record) => record.type === dialogueLineTypeCode && !referencedLineIds.has(record.stringId),
-    );
-
-    if (packages.length === 0 && dialogues.length === 0 && standaloneLines.length === 0) {
-      continue;
-    }
+    const wordSwaps = modRecords.filter((record) => record.type === wordSwapsTypeCode);
 
     lines.push(`#### Dialog Structures · ${escapeTableCell(modName)}`);
     lines.push("");
     lines.push(
-      `${pluralSuffix("package", packages.length)} · ${pluralSuffix("dialogue", dialogues.length)} · ${pluralSuffix("standalone line", standaloneLines.length)}`,
+      `${pluralSuffix("package", packages.length)} · ${pluralSuffix("dialogue", dialogues.length)} · ${pluralSuffix("word swap", wordSwaps.length)} · ${pluralSuffix("line record", modRecords.filter((record) => record.type === dialogueLineTypeCode).length)}`,
     );
     lines.push("");
 
@@ -2927,33 +2135,7 @@ const renderDialogStructures = (project: ModProject, dialogRecords: readonly Dia
       lines.push("##### Dialogue Packages");
       lines.push("");
       for (const record of packages) {
-        const heading = renderInspectorHeading(record);
-        const tag = getStringValue(record, "tag");
-        const dialogReferences = getReferences(record, "dialogs");
-        const inheritedReferences = getReferences(record, "inheritsFrom");
-
-        lines.push(`- ${escapeTableCell(heading)} · \`${escapeTableCell(record.stringId)}\``);
-        lines.push(`  - Lineage: ${getRecordLineageParts(record).join(" · ")}`);
-        if (tag.length > 0) {
-          lines.push(`  - Tag: ${escapeTableCell(tag)}`);
-        }
-        if (dialogReferences.length > 0) {
-          lines.push(
-            `  - Dialogs: ${pluralSuffix("reference", dialogReferences.length)}${formatReferenceCategoryHint("dialogs")}`,
-          );
-          lines.push(`  - Events: ${renderDialogEventBreakdown(dialogReferences)}`);
-          for (const reference of dialogReferences) {
-            lines.push(`    - ${formatResolvedReference(reference, recordById, "dialogs")}`);
-          }
-        }
-        if (inheritedReferences.length > 0) {
-          lines.push(
-            `  - Inherits from: ${pluralSuffix("package", inheritedReferences.length)}${formatReferenceCategoryHint("inheritsFrom")}`,
-          );
-          for (const reference of inheritedReferences) {
-            lines.push(`    - ${formatResolvedReference(reference, recordById)}`);
-          }
-        }
+        renderDialoguePackage(lines, ctx, record);
       }
       lines.push("");
     }
@@ -2962,112 +2144,176 @@ const renderDialogStructures = (project: ModProject, dialogRecords: readonly Dia
       lines.push("##### Dialogue Trees");
       lines.push("");
       for (const record of dialogues) {
-        renderDialogueRecord(lines, record, recordById, dialogTextById);
+        renderDialogueRecord(lines, ctx, record);
       }
     }
 
-    if (standaloneLines.length > 0) {
-      lines.push("##### Standalone Dialogue Lines");
+    if (wordSwaps.length > 0) {
+      lines.push("##### Word Swaps");
       lines.push("");
-      lines.push(
-        "These `DIALOGUE_LINE` records were not reached from any loaded `DIALOGUE.lines` reference, but they still contain text or dialog metadata.",
-      );
-      lines.push("");
-      for (const record of standaloneLines) {
-        renderStandaloneDialogLine(lines, record, recordById, dialogTextById);
+      for (const record of wordSwaps) {
+        renderWordSwap(lines, ctx, record);
       }
       lines.push("");
     }
+
+    const remainingLines = modRecords.filter(
+      (record) =>
+        record.type === dialogueLineTypeCode && !ctx.renderedLineLocations.has(record.stringId),
+    );
+    if (remainingLines.length > 0) {
+      const parents = buildLineParentIndex(
+        ctx,
+        new Set(remainingLines.map((record) => record.stringId)),
+      );
+      lines.push("##### Other Dialogue Lines");
+      lines.push("");
+      lines.push(
+        "Line records of this mod that are not reached from its own dialogues — typically edits to lines of existing (base or other-mod) dialogues, or unused lines.",
+      );
+      lines.push("");
+      for (const record of remainingLines) {
+        const parentList = parents.get(record.stringId) ?? [];
+        const parentText =
+          parentList.length > 0
+            ? `used by ${parentList.map((parent) => `${getItemTypeEnglishName(parent.type)} ${formatResolvedTarget(ctx, parent.stringId)}`).join("; ")}`
+            : "not referenced by any loaded dialogue";
+        lines.push(`- ${parentText}:`);
+        renderDialogueLineNode(
+          lines,
+          ctx,
+          { targetId: record.stringId, value0: 0, value1: 0, value2: 0 },
+          `line \`${record.stringId}\``,
+          1,
+        );
+      }
+      lines.push("");
+    }
+
+    const remainingActions = modRecords.filter(
+      (record) => record.type === dialogActionTypeCode && !ctx.renderedRecordUids.has(record.uid),
+    );
+    if (remainingActions.length > 0) {
+      lines.push("##### Other Dialog Actions");
+      lines.push("");
+      lines.push(
+        "Condition / effect records of this mod that are not used by the lines shown above (edits of existing records, or unused).",
+      );
+      lines.push("");
+      for (const record of remainingActions) {
+        const fakeReference: Reference = {
+          targetId: record.stringId,
+          value0: 0,
+          value1: 0,
+          value2: 0,
+        };
+        const effective = ctx.effectiveById.get(record.stringId) ?? record;
+        const description =
+          getIntValue(effective, "condition name") !== undefined
+            ? formatCondition(ctx, fakeReference)
+            : getIntValue(effective, "action name") !== undefined
+              ? formatEffect(ctx, fakeReference)
+              : "(no condition or action fields)";
+        lines.push(
+          `- \`${escapeTableCell(record.stringId)}\` · ${getRecordStatus(record)} · ${description}`,
+        );
+      }
+      lines.push("");
+    }
+  }
+
+  const tokenSummary = renderWordSwapTokenSummary(ctx);
+  if (tokenSummary.length > 0) {
+    lines.push(tokenSummary);
   }
 
   return lines.join("\n");
 };
 
-const renderExtractedTextRecords = (project: ModProject) => {
-  const dialogRecords: DialogRecord[] = [];
-  const describedEntityRecords: EntityRecord[] = [];
-  const nameOnlyEntityRecords: EntityRecord[] = [];
+// --- 抽出テキスト -----------------------------------------------------------------
 
-  for (const record of project.textRecords) {
-    if (record.kind === "dialog") {
-      dialogRecords.push(record);
-    } else {
-      if (record.description.length > 0) {
-        describedEntityRecords.push(record);
-      } else {
-        nameOnlyEntityRecords.push(record);
-      }
-    }
-  }
+const renderExtractedTextRecords = (ctx: RenderContext, describedUids: Set<string>) => {
+  const { project } = ctx;
+  const dialogRecords = project.textRecords.filter(
+    (record): record is DialogRecord => record.kind === "dialog",
+  );
+  const entityRecords = project.textRecords.filter(
+    (record): record is EntityRecord => record.kind === "entity",
+  );
+  const describedEntityRecords = entityRecords.filter((record) => record.description.length > 0);
+  const nameOnlyEntityRecords = entityRecords.filter((record) => record.description.length === 0);
 
+  const dialogStructureSection = renderDialogStructures(ctx);
   if (
-    dialogRecords.length === 0 &&
-    describedEntityRecords.length === 0 &&
-    nameOnlyEntityRecords.length === 0
+    dialogStructureSection.length === 0 &&
+    entityRecords.length === 0 &&
+    dialogRecords.length === 0
   ) {
     return "";
   }
 
-  const dialogByMod = groupTextRecordsByMod(dialogRecords);
-  const describedEntitiesByMod = groupTextRecordsByMod(describedEntityRecords);
-  const nameOnlyEntitiesByMod = groupTextRecordsByMod(nameOnlyEntityRecords);
-  const dialogStats = summarizeDialogRecords(dialogRecords);
   const lines: string[] = [];
   lines.push("## Extracted Text Records");
   lines.push("");
   lines.push(
-    `Dialog records: ${formatNumber(dialogStats.renderedRecordCount)} shown · Dialog lines: ${formatNumber(dialogStats.renderedTextCount)} shown · Described entities: ${formatNumber(describedEntityRecords.length)} · Name-only entities: ${formatNumber(nameOnlyEntityRecords.length)}`,
+    `Dialogue line records with text: ${formatNumber(dialogRecords.filter((record) => getVisibleDialogTexts(record).length > 0).length)} · Described entities: ${formatNumber(describedEntityRecords.length)} · Name-only entities: ${formatNumber(nameOnlyEntityRecords.length)}`,
   );
-  if (dialogStats.omittedEmptyRecordCount > 0 || dialogStats.omittedEmptyTextCount > 0) {
-    lines.push("");
-    lines.push(
-      `Empty-only dialog records omitted: ${formatNumber(dialogStats.omittedEmptyRecordCount)} · Empty dialog variants omitted: ${formatNumber(dialogStats.omittedEmptyTextCount)}`,
-    );
-  }
   lines.push("");
 
   lines.push("### Mod Breakdown");
   lines.push("");
   lines.push(
-    "| Mod | Dialog records | Dialog lines | Empty-only dialogs omitted | Described entities | Name-only entities |",
+    "| Mod | Dialogue lines with text | Text variants | Described entities | Name-only entities |",
   );
-  lines.push("| --- | ---: | ---: | ---: | ---: | ---: |");
-  for (const mod of project.mods) {
+  lines.push("| --- | ---: | ---: | ---: | ---: |");
+  const dialogByMod = groupByMod(dialogRecords);
+  const describedByMod = groupByMod(describedEntityRecords);
+  const nameOnlyByMod = groupByMod(nameOnlyEntityRecords);
+  for (const mod of getTargetMods(project)) {
     const modName = normalizeModName(mod.fileName);
-    const modDialogRecords = dialogByMod.get(modName) ?? [];
-    const modDescribedEntities = describedEntitiesByMod.get(modName) ?? [];
-    const modNameOnlyEntities = nameOnlyEntitiesByMod.get(modName) ?? [];
-    const modDialogStats = summarizeDialogRecords(modDialogRecords);
+    const modDialogs = (dialogByMod.get(modName) ?? []).filter(
+      (record) => getVisibleDialogTexts(record).length > 0,
+    );
+    const variantCount = modDialogs.reduce(
+      (sum, record) => sum + getVisibleDialogTexts(record).length,
+      0,
+    );
     lines.push(
-      `| ${escapeTableCell(modName)} | ${formatNumber(modDialogStats.renderedRecordCount)} | ${formatNumber(modDialogStats.renderedTextCount)} | ${formatNumber(modDialogStats.omittedEmptyRecordCount)} | ${formatNumber(modDescribedEntities.length)} | ${formatNumber(modNameOnlyEntities.length)} |`,
+      `| ${escapeTableCell(modName)} | ${formatNumber(modDialogs.length)} | ${formatNumber(variantCount)} | ${formatNumber((describedByMod.get(modName) ?? []).length)} | ${formatNumber((nameOnlyByMod.get(modName) ?? []).length)} |`,
     );
   }
   lines.push("");
 
-  const dialogStructureSection = renderDialogStructures(project, dialogRecords);
   if (dialogStructureSection.length > 0) {
     lines.push(dialogStructureSection);
-    lines.push("");
   }
 
   if (describedEntityRecords.length > 0) {
     lines.push("### Entity Descriptions");
     lines.push("");
-    for (const [modName, records] of describedEntitiesByMod) {
+    const uidByKey = new Map(
+      project.inspectorRecords.map((record) => [
+        `${record.modName}\u0000${record.stringId}`,
+        record.uid,
+      ]),
+    );
+    for (const [modName, records] of describedByMod) {
       lines.push(`#### ${escapeTableCell(modName)}`);
       lines.push("");
       lines.push(`${pluralSuffix("record", records.length)} with descriptions.`);
       lines.push("");
       for (const record of records) {
-        const heading = renderEntityHeading(record);
+        const uid = uidByKey.get(`${record.modName}\u0000${record.stringId}`);
+        if (uid) {
+          describedUids.add(uid);
+        }
+        const heading = renderBaseRecordHeading(record);
         const metaParts: string[] = [];
-
         if (heading !== record.stringId) {
           metaParts.push(`ID: \`${escapeTableCell(record.stringId)}\``);
         }
-
         metaParts.push(`Type: ${renderTypeDescriptor(record.type)}`);
-        metaParts.push(...getRecordLineageParts(record));
+        metaParts.push(`Change: ${record.saveData.changeTypeName}`);
 
         lines.push(`##### ${escapeTableCell(heading)}`);
         lines.push("");
@@ -3086,93 +2332,159 @@ const renderExtractedTextRecords = (project: ModProject) => {
       "These records were extracted because their names are text-relevant, but they do not carry a description field.",
     );
     lines.push("");
-    for (const [modName, records] of nameOnlyEntitiesByMod) {
+    for (const [modName, records] of nameOnlyByMod) {
       lines.push(`#### ${escapeTableCell(modName)}`);
       lines.push("");
-      lines.push("| Name | stringId | Type | Change | ID source |");
-      lines.push("| --- | --- | --- | --- | --- |");
+      lines.push("| Name | stringId | Type | Change |");
+      lines.push("| --- | --- | --- | --- |");
       for (const record of records) {
-        const idSource = inferReferenceSource(record.stringId);
-        const sourceLabel = idSource.length === 0 ? "—" : escapeTableCell(idSource);
+        const base = ctx.baseById.get(record.stringId);
+        const renamed =
+          base && base.name !== record.name ? ` (renamed from ${escapeTableCell(base.name)})` : "";
         lines.push(
-          `| ${escapeTableCell(record.name || "(unnamed)")} | \`${escapeTableCell(record.stringId)}\` | ${record.type} · ${getItemTypeEnglishName(record.type)} | ${escapeTableCell(record.saveData.changeTypeName)} | ${sourceLabel} |`,
+          `| ${escapeTableCell(record.name || "(unnamed)")}${renamed} | \`${escapeTableCell(record.stringId)}\` | ${record.type} · ${getItemTypeEnglishName(record.type)} | ${escapeTableCell(record.saveData.changeTypeName)} |`,
         );
       }
       lines.push("");
     }
   }
 
-  if (dialogRecords.length > 0) {
+  // ダイアログ構造で表示しきれなかった行 (通常は無い) のテキストだけを平坦に出す
+  const unrenderedDialogs = dialogRecords.filter(
+    (record) =>
+      getVisibleDialogTexts(record).length > 0 && !ctx.renderedLineLocations.has(record.stringId),
+  );
+  if (unrenderedDialogs.length > 0) {
     lines.push("### Dialog Text");
     lines.push("");
-    for (const [modName, records] of dialogByMod) {
-      const modDialogStats = summarizeDialogRecords(records);
-      if (modDialogStats.renderedRecordCount === 0) {
-        continue;
+    lines.push("Dialogue text that does not appear in the dialog structures above.");
+    lines.push("");
+    for (const record of unrenderedDialogs) {
+      lines.push(`- \`${escapeTableCell(record.stringId)}\``);
+      for (const text of getVisibleDialogTexts(record)) {
+        noteWordSwapTokens(ctx, text.original);
+        pushTextValue(lines, "  ", `\`${text.textId}\``, text.original);
       }
+    }
+    lines.push("");
+  }
 
-      lines.push(`#### ${escapeTableCell(modName)}`);
-      lines.push("");
-      lines.push(
-        `${pluralSuffix("record", modDialogStats.renderedRecordCount)} / ${pluralSuffix("line", modDialogStats.renderedTextCount)} shown.`,
+  return lines.join("\n");
+};
+
+// --- レコード一覧 -----------------------------------------------------------------
+
+const renderStringBearingRecords = (ctx: RenderContext, describedUids: ReadonlySet<string>) => {
+  const records = ctx.project.inspectorRecords.filter(
+    (record) => !isDialogRelevantRecord(record) && getVisibleStringEntries(record).length > 0,
+  );
+  if (records.length === 0) {
+    return "";
+  }
+
+  const lines: string[] = [];
+  lines.push("## String-bearing Records");
+  lines.push("");
+  lines.push(
+    "Non-dialogue records that carry text. Each record lists its strings, non-default values, files, and references so items, buildings, characters, squads, and world records are understandable on their own. Dialogue records are shown in Dialog Structures instead.",
+  );
+  lines.push("");
+
+  for (const [modName, modRecords] of groupByMod(records)) {
+    lines.push(`### String-bearing Records · ${escapeTableCell(modName)}`);
+    lines.push("");
+    lines.push(
+      `${pluralSuffix("record", modRecords.length)} from \`${escapeTableCell(modName)}\`.`,
+    );
+    lines.push("");
+    for (const record of modRecords) {
+      renderRecordDetail(lines, ctx, record, { describedElsewhere: describedUids });
+    }
+  }
+
+  return lines.join("\n");
+};
+
+const renderReferenceBearingRecords = (ctx: RenderContext) => {
+  const records = ctx.project.inspectorRecords.filter(
+    (record) =>
+      !isDialogRelevantRecord(record) &&
+      getVisibleStringEntries(record).length === 0 &&
+      hasReferenceDetails(record),
+  );
+  if (records.length === 0) {
+    return "";
+  }
+
+  const totalReferences = records.reduce((sum, record) => sum + record.counts.references, 0);
+  const lines: string[] = [];
+  lines.push("## Reference-bearing Records Without Visible Strings");
+  lines.push("");
+  lines.push(
+    "These non-dialog records have no non-empty string fields, but their references define concrete mod behavior such as vendor inventory, squad members, building parts, crafting inputs/outputs, biome links, and faction/world-state wiring.",
+  );
+  lines.push("");
+  lines.push(
+    `Rendered: ${pluralSuffix("record", records.length)} / ${pluralSuffix("reference", totalReferences)}`,
+  );
+  lines.push("");
+
+  for (const [modName, modRecords] of groupByMod(records)) {
+    lines.push(`### Reference-bearing Records · ${escapeTableCell(modName)}`);
+    lines.push("");
+    for (const record of modRecords) {
+      renderRecordDetail(lines, ctx, record);
+    }
+  }
+
+  return lines.join("\n");
+};
+
+const renderRecordsWithoutStringsOrReferences = (ctx: RenderContext) => {
+  const records = ctx.project.inspectorRecords.filter(
+    (record) =>
+      !isDialogRelevantRecord(record) &&
+      getVisibleStringEntries(record).length === 0 &&
+      !hasReferenceDetails(record),
+  );
+  if (records.length === 0) {
+    return "";
+  }
+
+  const removed = records.filter((record) => record.removed);
+  const others = records.filter((record) => !record.removed);
+  const lines: string[] = [];
+  lines.push("## Records Without Strings or References");
+  lines.push("");
+  lines.push(
+    "Records that only remove something, rename something, or change numeric / flag / file values. They have no text, but they change gameplay.",
+  );
+  lines.push("");
+
+  if (removed.length > 0) {
+    lines.push("### Removed Records");
+    lines.push("");
+    lines.push("| Record | stringId | Type | Defined by |");
+    lines.push("| --- | --- | --- | --- |");
+    for (const record of removed) {
+      ctx.renderedRecordUids.add(record.uid);
+      const base = ctx.baseById.get(record.stringId);
+      const sources = (ctx.sourcesById.get(record.stringId) ?? []).filter(
+        (source) => normalizeModName(source) !== normalizeModName(record.modName),
       );
-      if (modDialogStats.omittedEmptyRecordCount > 0) {
-        lines.push(
-          `${pluralSuffix("record", modDialogStats.omittedEmptyRecordCount)} with only empty dialog variants omitted.`,
-        );
-      }
+      lines.push(
+        `| ${escapeTableCell(base?.name ?? renderInspectorHeading(record))} | \`${escapeTableCell(record.stringId)}\` | ${getItemTypeEnglishName(base?.type ?? record.type)} | ${sources.length > 0 ? uniquePreserveOrder(sources).map(escapeTableCell).join(" → ") : escapeTableCell(inferReferenceSource(record.stringId) || "(not loaded)")} |`,
+      );
+    }
+    lines.push("");
+  }
+
+  if (others.length > 0) {
+    for (const [modName, modRecords] of groupByMod(others)) {
+      lines.push(`### Value-only and Rename-only Records · ${escapeTableCell(modName)}`);
       lines.push("");
-      for (const record of records) {
-        const visibleTexts = getVisibleDialogTexts(record);
-        if (visibleTexts.length === 0) {
-          continue;
-        }
-
-        const heading = renderDialogHeading(record);
-        const singleText = visibleTexts[0];
-        const omittedTextCount = record.texts.length - visibleTexts.length;
-
-        lines.push(`##### ${escapeTableCell(heading)}`);
-        lines.push("");
-
-        if (visibleTexts.length === 1 && singleText) {
-          const metaParts: string[] = [];
-
-          if (singleText.textId !== "text0") {
-            metaParts.push(`Field: \`${escapeTableCell(singleText.textId)}\``);
-          }
-
-          if (omittedTextCount > 0) {
-            metaParts.push(`${formatNumber(omittedTextCount)} empty omitted`);
-          }
-
-          if (metaParts.length > 0) {
-            lines.push(`- ${metaParts.join(" · ")}`);
-            lines.push("");
-          }
-
-          lines.push(formatMultiline(singleText.original));
-          lines.push("");
-          continue;
-        }
-
-        if (visibleTexts.length > 1) {
-          const variationParts = [`Variations: ${formatNumber(visibleTexts.length)} shown`];
-
-          if (omittedTextCount > 0) {
-            variationParts.push(`${formatNumber(omittedTextCount)} empty omitted`);
-          }
-
-          lines.push(`- ${variationParts.join(" · ")}`);
-          lines.push("");
-        }
-
-        for (const text of visibleTexts) {
-          lines.push(`- \`${escapeTableCell(text.textId)}\``);
-          lines.push("");
-          lines.push(formatMultiline(text.original));
-          lines.push("");
-        }
+      for (const record of modRecords) {
+        renderRecordDetail(lines, ctx, record);
       }
     }
   }
@@ -3180,23 +2492,203 @@ const renderExtractedTextRecords = (project: ModProject) => {
   return lines.join("\n");
 };
 
-export const renderProjectMarkdown = (project: ModProject): string => {
-  const targetMods = getTargetMods(project);
-  const lookupRecords = getLookupInspectorRecords(project);
-  const sections: string[] = [
-    renderHeader(project),
-    renderNavigation(project),
-    renderStructure(project),
-    renderReferenceContext(project),
-    renderDependencies(targetMods),
-    renderCategoryBreakdown(project.inspectorRecords),
-    renderTypeBreakdown(project.inspectorRecords),
-    renderRecordChangeBreakdown(project),
-    renderMods(project.mods),
-    renderExtractedTextRecords(project),
-    renderStringBearingRecords(project.inspectorRecords, lookupRecords),
-    renderReferenceBearingRecords(project.inspectorRecords, lookupRecords),
-  ];
+// --- アセット ---------------------------------------------------------------------
 
-  return sections.filter((section) => section.length > 0).join("\n") + "\n";
+const assetStatusLabels: Readonly<Record<AssetReference["status"], string>> = {
+  dependency: "found in another loaded mod",
+  game: "found in game data",
+  missing: "missing",
+  mod: "found in the mod folder",
+  unchecked: "not checked (location unknown)",
 };
+
+const renderAssetReferences = (project: ModProject) => {
+  if (project.assetReferences.length === 0) {
+    return "";
+  }
+
+  const statusOrder: AssetReference["status"][] = [
+    "missing",
+    "unchecked",
+    "mod",
+    "dependency",
+    "game",
+  ];
+  const lines: string[] = [];
+  lines.push("## Asset Files");
+  lines.push("");
+  lines.push(
+    "Files referenced by file fields of the target records. Paths are relative to the Kenshi folder (`./data/...` = game data, `./mods/<mod>/...` = a mod folder). `.mesh` / `.skeleton` are Ogre meshes / skeletons, `.xml` are PhysX collision objects, `.phs` are Scythe physics (ragdolls), `.dds` / `.png` are textures and icons.",
+  );
+  lines.push("");
+  lines.push("| Status | Kind | Path | Fields | Records |");
+  lines.push("| --- | --- | --- | --- | ---: |");
+  const sorted = [...project.assetReferences].sort(
+    (left, right) =>
+      statusOrder.indexOf(left.status) - statusOrder.indexOf(right.status) ||
+      left.path.localeCompare(right.path, "en"),
+  );
+  for (const asset of sorted) {
+    lines.push(
+      `| ${assetStatusLabels[asset.status]} | ${escapeTableCell(asset.kind)} | ${formatCodeInTable(asset.path)} | ${asset.fieldKeys.map(formatCodeInTable).join(", ")} | ${formatNumber(asset.recordCount)} |`,
+    );
+  }
+  lines.push("");
+  return lines.join("\n");
+};
+
+// --- フィールド用語集 -------------------------------------------------------------
+
+const describeFieldKind = (field: FcsFieldDefinition) => {
+  switch (field.kind) {
+    case "enum":
+      return `enum ${field.enumName}, default ${field.enumValue}`;
+    case "reference": {
+      const values =
+        field.referenceDefaults.length > 0 ? ` (values ${field.referenceDefaults.join(", ")})` : "";
+      return `reference → ${field.referenceTarget}${values}${field.owned ? ", owned sub-items" : ""}`;
+    }
+    case "file":
+      return `file ${field.fileFilter ?? ""}`.trim();
+    case "string":
+      return `string, default ${field.defaultText}`;
+    default:
+      return `${field.kind}, default ${field.defaultText}`;
+  }
+};
+
+const renderFieldGlossary = (ctx: RenderContext) => {
+  if (!ctx.schema || ctx.usedFields.size === 0) {
+    return "";
+  }
+
+  const lines: string[] = [];
+  lines.push("## Field Glossary");
+  lines.push("");
+  lines.push(
+    "FCS definitions (type, default, description) of every field that appears above, grouped by record type. Fields marked `not in fcs.def` are not defined for that type by the FCS and may be ignored by the game.",
+  );
+  lines.push("");
+
+  const typeEntries = [...ctx.usedFields.entries()].sort((left, right) =>
+    left[0].localeCompare(right[0], "en"),
+  );
+  for (const [fcsType, fieldNames] of typeEntries) {
+    const definitions = ctx.schema.types.get(fcsType);
+    lines.push(`### ${fcsType}`);
+    lines.push("");
+    for (const fieldName of [...fieldNames].sort((left, right) =>
+      left.localeCompare(right, "en"),
+    )) {
+      const field = definitions?.get(fieldName);
+      if (!field) {
+        lines.push(`- \`${escapeTableCell(fieldName)}\`: not in fcs.def`);
+        continue;
+      }
+      const description =
+        field.description.length > 0 ? ` — ${escapeInline(field.description)}` : "";
+      lines.push(
+        `- ${formatCode(fieldName)} (${escapeInline(describeFieldKind(field))})${description}`,
+      );
+    }
+    lines.push("");
+  }
+
+  return lines.join("\n");
+};
+
+// --- 全体 -------------------------------------------------------------------------
+
+export interface MarkdownSection {
+  anchor: string;
+  content: string;
+  title: string;
+}
+
+/** Markdown をセクションごとに組み立てる (書き出し画面の構成表示にも使う)。空のセクションは含めない。 */
+export const renderProjectMarkdownSections = (
+  project: ModProject,
+  options: MarkdownRenderOptions = {},
+): MarkdownSection[] => {
+  const ctx = createRenderContext(project, options);
+  const summary = summarizeProject(project);
+  const targetMods = getTargetMods(project);
+  const schemaSource = ctx.schema
+    ? (options.schemaSource ?? (options.schema === undefined ? builtinFcsSource : "fcs.def"))
+    : null;
+  const describedUids = new Set<string>();
+
+  // 用語集は他のセクションで使われたフィールドを集計するため、本文を先に描画する。
+  const extractedText = renderExtractedTextRecords(ctx, describedUids);
+  const stringRecords = renderStringBearingRecords(ctx, describedUids);
+  const referenceRecords = renderReferenceBearingRecords(ctx);
+  const otherRecords = renderRecordsWithoutStringsOrReferences(ctx);
+  const assets = renderAssetReferences(project);
+  const glossary = options.includeFieldGlossary === false ? "" : renderFieldGlossary(ctx);
+
+  const sections: MarkdownSection[] = [
+    {
+      anchor: "directory-structure",
+      content: renderStructure(project),
+      title: "Directory Structure",
+    },
+    {
+      anchor: "reference-context",
+      content: renderReferenceContext(project),
+      title: "Reference Context",
+    },
+    {
+      anchor: "declared-dependencies",
+      content: renderDependencies(targetMods),
+      title: "Declared Dependencies / References",
+    },
+    {
+      anchor: "category-breakdown",
+      content: renderCategoryBreakdown(project.inspectorRecords),
+      title: "Category Breakdown",
+    },
+    {
+      anchor: "item-type-breakdown",
+      content: renderTypeBreakdown(project.inspectorRecords),
+      title: "Item Type Breakdown",
+    },
+    {
+      anchor: "record-change-breakdown",
+      content: renderRecordChangeBreakdown(project),
+      title: "Record Change Breakdown",
+    },
+    { anchor: "mods", content: renderMods(project.mods), title: "Mods" },
+    { anchor: "extracted-text-records", content: extractedText, title: "Extracted Text Records" },
+    { anchor: "string-bearing-records", content: stringRecords, title: "String-bearing Records" },
+    {
+      anchor: "reference-bearing-records-without-visible-strings",
+      content: referenceRecords,
+      title: "Reference-bearing Records Without Visible Strings",
+    },
+    {
+      anchor: "records-without-strings-or-references",
+      content: otherRecords,
+      title: "Records Without Strings or References",
+    },
+    { anchor: "asset-files", content: assets, title: "Asset Files" },
+    { anchor: "field-glossary", content: glossary, title: "Field Glossary" },
+  ].filter((section) => section.content.length > 0);
+
+  return [
+    {
+      anchor: "file-summary",
+      content: renderHeader(ctx, summary, schemaSource),
+      title: "File Summary",
+    },
+    { anchor: "navigation", content: renderNavigation(sections), title: "Navigation" },
+    ...sections,
+  ];
+};
+
+export const joinMarkdownSections = (sections: readonly MarkdownSection[]) =>
+  sections.map((section) => section.content).join("\n") + "\n";
+
+export const renderProjectMarkdown = (
+  project: ModProject,
+  options: MarkdownRenderOptions = {},
+): string => joinMarkdownSections(renderProjectMarkdownSections(project, options));
